@@ -40,7 +40,12 @@ export function readMetadata(): Doc[] {
       if (!line.trim()) continue;
       const r = JSON.parse(line);
       const nr = r.dokumentnummer ?? r.drucksache ?? r.id;
-      const datei = r.datei ?? r.file ?? r.filename ?? (nr ? `${String(nr).replace("/", "-")}.pdf` : undefined);
+      // Dateiname: explizites Feld, sonst Drucksachen-ID (z. B. 281908.pdf), sonst Dokumentnummer (21-5091.pdf)
+      const cands = [r.datei, r.file, r.filename, r.pdf, r.pdf_datei, r.id && `${r.id}.pdf`, nr && `${String(nr).replace(/\//g, "-")}.pdf`]
+        .filter(Boolean)
+        .map((c) => (String(c).toLowerCase().endsWith(".pdf") ? String(c) : `${c}.pdf`))
+        .map((c) => path.basename(c));
+      const datei = cands.find((c) => fs.existsSync(path.join(env.dataDir, dir, c))) ?? cands[0];
       if (!nr || !datei) continue;
       out.push({
         id: String(r.id ?? nr),
