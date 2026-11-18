@@ -39,16 +39,18 @@ const istBotSchutz = (r: Response, body?: string) => (r.headers.get("content-typ
 async function get(url: string, headers: Record<string, string> = {}, attempt = 0): Promise<Response> {
   if (attempt === 0) await sleep(PAUSE * (0.5 + Math.random())); // Rücksicht auf den Server
   try {
-    const r = await fetch(url, { headers: { "User-Agent": UA, ...headers } });
+    const r = await fetch(url, { headers: { "User-Agent": UA, ...headers }, signal: AbortSignal.timeout(60000) });
     if (istBotSchutz(r)) {
       if (attempt >= 4) throw new Error("Der Server verlangt eine Browser-Prüfung (Bot-Schutz). Bitte später erneut starten (die Läufe sind wiederholbar) oder die Last senken.");
-      await sleep(15000 * (attempt + 1));
+      const wait = 15 * (attempt + 1);
+      console.warn(`Bot-Schutz des Servers aktiv (HTTP ${r.status}) bei ${new URL(url).pathname} – warte ${wait} s (Versuch ${attempt + 1}/4) …`);
+      await sleep(wait * 1000);
       return get(url, headers, attempt + 1);
     }
-    if ((r.status === 429 || r.status >= 500) && attempt < 5) { await sleep(2 ** attempt * 1000); return get(url, headers, attempt + 1); }
+    if ((r.status === 429 || r.status >= 500) && attempt < 5) { console.warn(`HTTP ${r.status} – neuer Versuch in ${2 ** attempt} s`); await sleep(2 ** attempt * 1000); return get(url, headers, attempt + 1); }
     return r;
   } catch (e) {
-    if (attempt < 5 && !/Bot-Schutz/.test((e as Error).message)) { await sleep(2 ** attempt * 1000); return get(url, headers, attempt + 1); }
+    if (attempt < 5 && !/Bot-Schutz/.test((e as Error).message)) { console.warn(`Netzwerkfehler (${(e as Error).name}) – neuer Versuch in ${2 ** attempt} s`); await sleep(2 ** attempt * 1000); return get(url, headers, attempt + 1); }
     throw e;
   }
 }
@@ -162,6 +164,7 @@ async function phaseAntworten() {
 }
 
 async function main() {
+  console.log(`DIP: ${BASE} (sequentiell, Pause ~${PAUSE} ms)`);
   if (von || bis) console.log(`Zeitraum: ${von ?? "Beginn"} bis ${bis ?? "heute"}`);
   if (nur !== "antworten") await phaseAnfragen();
   if (nur !== "anfragen") await phaseAntworten();
