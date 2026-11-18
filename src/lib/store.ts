@@ -17,6 +17,8 @@ export type Doc = {
   bmz: boolean;
   deskriptoren: string[];
   sachgebiete: string[];
+  quelle_url: string | null; // Original beim Bundestag (aus den Metadaten)
+  urheber: string | null;
   folder: string;
   datei: string; // Dateiname der PDF im Ordner
 };
@@ -40,14 +42,21 @@ export function readMetadata(): Doc[] {
       if (!line.trim()) continue;
       const r = JSON.parse(line);
       const nr = r.dokumentnummer ?? r.drucksache ?? r.id;
-      const datei = r.datei ?? r.file ?? r.filename ?? (nr ? `${String(nr).replace("/", "-")}.pdf` : undefined);
+      // Dateiname: explizites Feld, sonst Drucksachen-ID (z. B. 281908.pdf), sonst Dokumentnummer (21-5091.pdf)
+      const cands = [r.datei, r.file, r.filename, r.pdf, r.pdf_datei, r.id && `${r.id}.pdf`, nr && `${String(nr).replace(/\//g, "-")}.pdf`]
+        .filter(Boolean)
+        .map((c) => (String(c).toLowerCase().endsWith(".pdf") ? String(c) : `${c}.pdf`))
+        .map((c) => path.basename(c));
+      const datei = cands.find((c) => fs.existsSync(path.join(env.dataDir, dir, c))) ?? cands[0];
       if (!nr || !datei) continue;
       out.push({
         id: String(r.id ?? nr),
         dokumentnummer: String(nr),
         datum: r.datum ? String(r.datum).slice(0, 10) : null,
         titel: r.titel ?? String(nr),
-        vorgangstyp: r.vorgangstyp ?? typ,
+        vorgangstyp: r.vorgangsbezug?.[0]?.vorgangstyp ?? r.vorgangstyp ?? r.drucksachetyp ?? typ,
+        quelle_url: r.fundstelle?.pdf_url ?? r.pdf_url ?? null,
+        urheber: r.urheber?.[0]?.titel ?? null,
         kfw: !!r.kfw,
         bmz: !!r.bmz,
         deskriptoren: r.deskriptoren ?? [],
@@ -68,7 +77,12 @@ export function loadStore(): Store | null {
 
   const m = JSON.parse(fs.readFileSync(manifest, "utf8")) as { dim: number; chunks: number };
   const done = new Set<string>(JSON.parse(fs.readFileSync(manifest, "utf8")).docs ?? []);
-  const docs = new Map(readMetadata().filter((d) => done.has(d.id)).map((d) => [d.id, d]));
+  // KfW-/BMZ-Flags: aus den Metadaten, sonst vom Ingest aus dem Volltext abgeleitet (flags.json)
+  const flagsFile = path.join(indexDir(), "flags.json");
+  const flags: Record<string, { kfw: boolean; bmz: boolean }> = fs.existsSync(flagsFile) ? JSON.parse(fs.readFileSync(flagsFile, "utf8")) : {};
+  const docs = new Map(
+    readMetadata().filter((d) => done.has(d.id)).map((d) => [d.id, { ...d, kfw: d.kfw || !!flags[d.id]?.kfw, bmz: d.bmz || !!flags[d.id]?.bmz }]),
+  );
   const chunks = fs
     .readFileSync(path.join(indexDir(), "chunks.jsonl"), "utf8")
     .split("\n")

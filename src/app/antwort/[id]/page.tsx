@@ -20,6 +20,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         <div className="row" style={{ marginTop: 14 }}>
           {(d.deskriptoren ?? []).map((x: string) => <span key={x} className="tag ent">{x}</span>)}
           {d.pdf_url && <a className="btn" href={d.pdf_url} target="_blank" rel="noreferrer">PDF öffnen ↗</a>}
+          {"quelle_url" in d && d.quelle_url && <a className="btn" href={d.quelle_url} target="_blank" rel="noreferrer">Beim Bundestag ↗</a>}
         </div>
       </div>
       <div className="card fulltext">{d.text}</div>
