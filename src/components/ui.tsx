@@ -31,8 +31,7 @@ export function HitCard({ hit, terms = [], picked, onPick, quote }: {
         <b>{hit.dokumentnummer}</b>
         <span>{fmtDate(hit.datum)}</span>
         {hit.vorgangstyp && <span className="tag">{hit.vorgangstyp}</span>}
-        {hit.kfw && <span className="tag">KfW</span>}
-        {hit.bmz && <span className="tag">BMZ</span>}
+        {hit.tags.map((t) => <span key={t.id} className="tag bezug">{t.label}</span>)}
         {isOld(hit.datum) && <span className="warn" title="Antwort ist älter als 12 Monate – Aktualität prüfen">⏱ älter als 12 Monate</span>}
         <span className="spacer" />
         {hit.relevanz > 0 && (

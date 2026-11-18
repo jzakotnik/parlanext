@@ -13,7 +13,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       <div className="hero">
         <div className="row"><b>{d.dokumentnummer}</b><span>{fmtDate(d.datum)}</span>
           {d.vorgangstyp && <span className="tag">{d.vorgangstyp}</span>}
-          {d.kfw && <span className="tag">KfW</span>}{d.bmz && <span className="tag">BMZ</span>}
+          {d.tags.map((t) => <span key={t.id} className="tag bezug">{t.label}</span>)}
           {isOld(d.datum) && <span className="warn">⏱ älter als 12 Monate</span>}
         </div>
         <h1 style={{ marginTop: 12 }}>{d.titel}</h1>

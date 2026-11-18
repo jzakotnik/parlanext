@@ -150,3 +150,5 @@ mark { background: color-mix(in srgb, #ffd54a 55%, transparent); color: inherit;
 .ll.warn { color: var(--part); }
 .ll.active .ll-m::after { content: " ▍"; animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0.2; } }
+
+.tag.bezug { background: var(--brand-soft); color: var(--ink); border-color: transparent; font-weight: 600; }

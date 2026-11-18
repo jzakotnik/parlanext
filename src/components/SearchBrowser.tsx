@@ -33,8 +33,6 @@ export default function SearchBrowser() {
         <button className="btn primary" disabled={busy}>{busy ? "Suche …" : "Suchen"}</button>
       </form>
       <div className="filters">
-        <label className="toggle"><input type="checkbox" checked={!!filter.kfw} onChange={(e) => upd({ kfw: e.target.checked })} /> KfW-Bezug</label>
-        <label className="toggle"><input type="checkbox" checked={!!filter.bmz} onChange={(e) => upd({ bmz: e.target.checked })} /> BMZ-Bezug</label>
         <select className="input" aria-label="Vorgangstyp" value={filter.typ ?? ""} onChange={(e) => upd({ typ: e.target.value || undefined })}>
           <option value="">Alle Vorgangstypen</option><option>Kleine Anfrage</option><option>Große Anfrage</option>
         </select>

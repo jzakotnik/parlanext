@@ -3,6 +3,7 @@ import path from "node:path";
 import { env } from "@/lib/env";
 import { FOLDERS, INDEX_TYPEN, indexDir, pdfPath, readMetadata } from "@/lib/store";
 import { fmtDate } from "@/components/ui";
+import { loadTagDefs } from "@/lib/tags";
 
 export const metadata = { title: "Index-Status – Anfragen-Check" };
 
@@ -24,6 +25,10 @@ export default function Page() {
       perDoc.set(id, (perDoc.get(id) ?? 0) + 1);
     }
   }
+  // Tags je Dokument (index/tags.json, erzeugt von ingest bzw. "npm run tags")
+  const tf = path.join(indexDir(), "tags.json");
+  const tagMap: Record<string, string[]> = fs.existsSync(tf) ? JSON.parse(fs.readFileSync(tf, "utf8")) : {};
+  const tagDefs = loadTagDefs();
   const known = new Set(meta.map((d) => d.id));
   const fremd = [...indexed].filter((id) => !known.has(id));
   const ohneChunks = meta.filter((d) => indexed.has(d.id) && !perDoc.has(d.id));
@@ -68,6 +73,10 @@ export default function Page() {
             <Row k="Fremde Dokument-IDs im Index (nicht in metadaten.jsonl)" v={fremd.length} warn={fremd.length > 0} />
             <Row k="Indexiert, aber ohne Chunks (leer/Verweis)" v={ohneChunks.length} />
             <Row k="PDF-Datei fehlt" v={pdfFehlt.length} warn={pdfFehlt.length > 0} />
+            <h3 style={{ fontSize: 15, margin: "18px 0 4px" }}>Tags (config/tags.json)</h3>
+            {tagDefs.length === 0 && <p style={{ color: "var(--ink-2)", fontSize: 14 }}>Keine Tags konfiguriert.</p>}
+            {tagDefs.map((d) => <Row key={d.id} k={d.label} v={Object.values(tagMap).filter((t) => t.includes(d.id)).length} />)}
+            {Object.keys(tagMap).length < indexed.size && <p className="warn" style={{ marginTop: 8 }}>Nicht für alle Dokumente berechnet – <code>npm run tags</code> ausführen.</p>}
             {fremd.length > 0 && <p className="warn" style={{ marginTop: 12 }}>Auffällig: {fremd.slice(0, 5).join(", ")}{fremd.length > 5 ? " …" : ""}</p>}
             {fremd.length === 0 && <p style={{ color: "var(--ok)", marginTop: 12 }}>✓ Alle Dokumente im Index stammen aus Ihren Ordnern.</p>}
           </div>

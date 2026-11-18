@@ -4,8 +4,7 @@ export type Hit = {
   datum: string | null; // ISO
   titel: string;
   vorgangstyp: string | null;
-  kfw: boolean;
-  bmz: boolean;
+  tags: { id: string; label: string }[];
   pdf_url: string | null;
   passage: string;
   relevanz: number; // 0..1
@@ -33,7 +32,7 @@ export type CheckResponse = {
   schwelle: number;
 };
 
-export type Filter = { kfw?: boolean; bmz?: boolean; von?: string; bis?: string; typ?: string };
+export type Filter = { tags?: string[]; von?: string; bis?: string; typ?: string };
 
 export const SCHWELLE = 0.55;
 

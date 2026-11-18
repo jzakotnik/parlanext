@@ -3,6 +3,7 @@ import { embed } from "./azure";
 import { hasIndex } from "./env";
 import { DEMO_DOCS } from "./demo-data";
 import { loadStore, textPath } from "./store";
+import { tagRefs } from "./tags";
 import { tokens } from "./tokens";
 import type { Filter, Hit } from "./types";
 
@@ -27,8 +28,8 @@ export function bestPassage(text: string, q: string, max = 700) {
   return best.length > max ? best.slice(0, max) + " …" : best;
 }
 
-const passes = (d: { kfw: boolean; bmz: boolean; vorgangstyp: string | null; datum: string | null }, f: Filter) =>
-  (!f.kfw || d.kfw) && (!f.bmz || d.bmz) && (!f.typ || d.vorgangstyp === f.typ) &&
+const passes = (d: { tags: string[]; vorgangstyp: string | null; datum: string | null }, f: Filter) =>
+  (!f.tags?.length || f.tags.every((t) => d.tags.includes(t))) && (!f.typ || d.vorgangstyp === f.typ) &&
   (!f.von || (d.datum ?? "") >= f.von) && (!f.bis || (d.datum ?? "9999") <= f.bis);
 
 // ---------------------------------------------------------------- Demo-Modus
@@ -45,7 +46,7 @@ function demoSearch(query: string, f: Filter, limit: number): Hit[] {
     .slice(0, limit)
     .map(({ d, relevanz }) => ({
       id: d.id, dokumentnummer: d.dokumentnummer, datum: d.datum, titel: d.titel, vorgangstyp: d.vorgangstyp,
-      kfw: d.kfw, bmz: d.bmz, pdf_url: null, passage: bestPassage(d.text, query), relevanz, demo: true,
+      tags: tagRefs(d.tags), pdf_url: null, passage: bestPassage(d.text, query), relevanz, demo: true,
     }));
 }
 
@@ -59,7 +60,7 @@ export async function searchAntworten(query: string, f: Filter = {}, limit = 10)
     const d = store.docs.get(docId)!;
     return {
       id: d.id, dokumentnummer: d.dokumentnummer, datum: d.datum, titel: d.titel, vorgangstyp: d.vorgangstyp,
-      kfw: d.kfw, bmz: d.bmz, pdf_url: `/api/pdf/${encodeURIComponent(d.id)}`, passage, relevanz,
+      tags: tagRefs(d.tags), pdf_url: `/api/pdf/${encodeURIComponent(d.id)}`, passage, relevanz,
     };
   };
 
@@ -126,9 +127,9 @@ export async function getAntwort(id: string) {
   const store = hasIndex() ? loadStore() : null;
   if (!store) {
     const d = DEMO_DOCS.find((x) => x.id === id);
-    return d ? { ...d, pdf_url: null as string | null, demo: true } : null;
+    return d ? { ...d, tags: tagRefs(d.tags), pdf_url: null as string | null, demo: true } : null;
   }
   const d = store.docs.get(id) ?? [...store.docs.values()].find((x) => x.dokumentnummer === id);
   if (!d) return null;
-  return { ...d, pdf_url: `/api/pdf/${encodeURIComponent(d.id)}`, text: readText(d.id), demo: false };
+  return { ...d, tags: tagRefs(d.tags), pdf_url: `/api/pdf/${encodeURIComponent(d.id)}`, text: readText(d.id), demo: false };
 }
