@@ -1,0 +1,13 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: parlanext
+      POSTGRES_PASSWORD: parlanext
+      POSTGRES_DB: parlanext
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+volumes:
+  pgdata:
