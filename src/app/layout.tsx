@@ -6,6 +6,22 @@ import { hasIndex } from "@/lib/env";
 export const metadata: Metadata = {
   title: "Anfragen-Check – Parlamentarische Anfragen zur KfW Entwicklungsbank",
   description: "Prüfen, ob eine parlamentarische Anfrage bereits von der Bundesregierung beantwortet wurde.",
+  // Keine Indexierung, kein Folgen von Links, keine Archivkopien, Snippets oder Bildindexierung
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    noarchive: true,
+    nosnippet: true,
+    noimageindex: true,
+    googleBot: { index: false, follow: false, noarchive: true, nosnippet: true, noimageindex: true },
+  },
+};
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#eef2fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#062254" },
+  ],
 };
 export const viewport: Viewport = {
   themeColor: [
