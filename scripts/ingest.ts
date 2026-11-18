@@ -28,7 +28,7 @@ const manifestFile = path.join(idx, "manifest.json");
 const chunksFile = path.join(idx, "chunks.jsonl");
 const vecFile = path.join(idx, "vectors.f32");
 
-type Manifest = { dim: number; model: string; chunks: number; docs: string[] };
+type Manifest = { dim: number; model: string; chunks: number; docs: string[]; endpointHost?: string; updated?: string };
 const manifest: Manifest = fs.existsSync(manifestFile)
   ? JSON.parse(fs.readFileSync(manifestFile, "utf8"))
   : { dim: DIM, model: env.embeddingDeployment ?? "", chunks: 0, docs: [] };
@@ -91,6 +91,8 @@ async function flush() {
   }
   manifest.docs.push(...pendingDocs);
   manifest.model = env.embeddingDeployment ?? "";
+  manifest.endpointHost = new URL(env.endpoint!).host;
+  manifest.updated = new Date().toISOString();
   fs.writeFileSync(manifestFile, JSON.stringify(manifest));
   queue = [];
   pendingDocs = [];
