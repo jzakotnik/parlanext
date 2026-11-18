@@ -8,6 +8,7 @@
     "start": "next start",
     "data:init": "node scripts/init-data.mjs",
     "fetch": "tsx --env-file=.env.local scripts/fetch.ts",
+    "tags": "tsx --env-file=.env.local scripts/tags.ts",
     "ingest": "tsx --env-file=.env.local scripts/ingest.ts"
   },
   "dependencies": {

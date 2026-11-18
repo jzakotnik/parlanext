@@ -1,0 +1,21 @@
+{
+  "hinweis": "Tags werden beim Ingest (und mit 'npm run tags') aus dem Volltext jeder Antwort abgeleitet. Eigene Tags einfach ergänzen. Mit mindestens=2 zählt ein Tag erst ab zwei Fundstellen im Text.",
+  "tags": [
+    {
+      "id": "kfw",
+      "label": "KfW-Bezug",
+      "begriffe": ["KfW", "Kreditanstalt für Wiederaufbau", "Entwicklungsbank"]
+    },
+    {
+      "id": "bmz",
+      "label": "BMZ-Bezug",
+      "begriffe": ["BMZ", "Bundesministerium für wirtschaftliche Zusammenarbeit"]
+    },
+    {
+      "id": "ez",
+      "label": "Entwicklungszusammenarbeit",
+      "begriffe": ["Entwicklungszusammenarbeit", "Entwicklungspolitik", "Entwicklungshilfe", "ODA", "Official Development Assistance"],
+      "mindestens": 2
+    }
+  ]
+}

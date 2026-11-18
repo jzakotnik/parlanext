@@ -11,7 +11,7 @@ const BEISPIEL = `1. Wie hoch waren die Neuzusagen der KfW Entwicklungsbank für
 
 export default function CheckWorkspace() {
   const [text, setText] = useState("");
-  const [filter, setFilter] = useState<Filter>({ kfw: false });
+  const [filter, setFilter] = useState<Filter>({});
   const [data, setData] = useState<CheckResponse | null>(null);
   const [fragen, setFragen] = useState<FrageResult[]>([]);
   const [sel, setSel] = useState(0);
@@ -111,8 +111,6 @@ export default function CheckWorkspace() {
           placeholder="Anfrage, einzelne Frage oder Stichworte einfügen …"
           onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") run(); }} />
         <div className="bar">
-          <label className="toggle"><input type="checkbox" checked={!!filter.kfw} onChange={(e) => setFilter({ ...filter, kfw: e.target.checked })} /> Nur KfW-Bezug</label>
-          <label className="toggle"><input type="checkbox" checked={!!filter.bmz} onChange={(e) => setFilter({ ...filter, bmz: e.target.checked })} /> Nur BMZ-Bezug</label>
           <label className="toggle">ab <input type="date" className="input" style={{ padding: "2px 8px" }} value={filter.von ?? ""} onChange={(e) => setFilter({ ...filter, von: e.target.value || undefined })} /></label>
           <span className="spacer" />
           <button className="btn ghost" onClick={() => setText(BEISPIEL)}>Beispiel einfügen</button>
@@ -198,7 +196,7 @@ export default function CheckWorkspace() {
               <h2 className="col-title" style={{ margin: 0 }}>Rechercheprotokoll</h2>
               <ol>{f.protokoll.map((p) => <li key={p.query}>„{p.query}“ <span className="tag">{p.treffer} Treffer</span></li>)}</ol>
               <p style={{ color: "var(--ink-3)", margin: "10px 0 0" }}>
-                Filter: {[filter.kfw && "KfW", filter.bmz && "BMZ", filter.von && `ab ${fmtDate(filter.von)}`].filter(Boolean).join(", ") || "keine"} · Schwelle {pct(data.schwelle)}
+                Filter: {[filter.von && `ab ${fmtDate(filter.von)}`].filter(Boolean).join(", ") || "keine"} · Schwelle {pct(data.schwelle)}
                 <br />Modus: {data.modus.ki ? "KI-Bewertung" : "ohne KI"} · {data.modus.datenbank ? "Suchindex" : "Demo-Daten"}
               </p>
             </div>

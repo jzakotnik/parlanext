@@ -17,8 +17,7 @@ export type Doc = {
   titel: string;
   vorgangstyp: string;
   drucksachetyp: string; // "Antwort", "Kleine Anfrage", …
-  kfw: boolean;
-  bmz: boolean;
+  tags: string[]; // Tag-IDs (siehe config/tags.json)
   deskriptoren: string[];
   sachgebiete: string[];
   quelle_url: string | null; // Original beim Bundestag (aus den Metadaten)
@@ -62,8 +61,7 @@ export function readMetadata(): Doc[] {
         drucksachetyp: r.drucksachetyp ?? "",
         quelle_url: r.fundstelle?.pdf_url ?? r.pdf_url ?? null,
         urheber: r.urheber?.[0]?.titel ?? null,
-        kfw: !!r.kfw,
-        bmz: !!r.bmz,
+        tags: [...(r.kfw ? ["kfw"] : []), ...(r.bmz ? ["bmz"] : [])], // Altformat; sonst aus index/tags.json
         deskriptoren: r.deskriptoren ?? [],
         sachgebiete: r.sachgebiete ?? [],
         folder: dir,
@@ -77,16 +75,22 @@ export function readMetadata(): Doc[] {
 export function loadStore(): Store | null {
   const manifest = path.join(indexDir(), "manifest.json");
   if (!fs.existsSync(manifest)) return null;
-  const mtime = fs.statSync(manifest).mtimeMs;
+  const tf = path.join(indexDir(), "tags.json");
+  const mtime = fs.statSync(manifest).mtimeMs + (fs.existsSync(tf) ? fs.statSync(tf).mtimeMs : 0);
   if (g.__store && g.__store.mtime === mtime) return g.__store;
 
   const m = JSON.parse(fs.readFileSync(manifest, "utf8")) as { dim: number; chunks: number };
   const done = new Set<string>(JSON.parse(fs.readFileSync(manifest, "utf8")).docs ?? []);
-  // KfW-/BMZ-Flags: aus den Metadaten, sonst vom Ingest aus dem Volltext abgeleitet (flags.json)
+  // Tags: vom Ingest bzw. "npm run tags" aus dem Volltext abgeleitet (index/tags.json); Altbestand: flags.json
+  const tagsFile = path.join(indexDir(), "tags.json");
   const flagsFile = path.join(indexDir(), "flags.json");
-  const flags: Record<string, { kfw: boolean; bmz: boolean }> = fs.existsSync(flagsFile) ? JSON.parse(fs.readFileSync(flagsFile, "utf8")) : {};
+  const tagMap: Record<string, string[]> = fs.existsSync(tagsFile)
+    ? JSON.parse(fs.readFileSync(tagsFile, "utf8"))
+    : fs.existsSync(flagsFile)
+      ? Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(flagsFile, "utf8")) as Record<string, { kfw: boolean; bmz: boolean }>).map(([id, f]) => [id, [...(f.kfw ? ["kfw"] : []), ...(f.bmz ? ["bmz"] : [])]]))
+      : {};
   const docs = new Map(
-    readMetadata().filter((d) => done.has(d.id)).map((d) => [d.id, { ...d, kfw: d.kfw || !!flags[d.id]?.kfw, bmz: d.bmz || !!flags[d.id]?.bmz }]),
+    readMetadata().filter((d) => done.has(d.id)).map((d) => [d.id, { ...d, tags: [...new Set([...d.tags, ...(tagMap[d.id] ?? [])])] }]),
   );
   const chunks = fs
     .readFileSync(path.join(indexDir(), "chunks.jsonl"), "utf8")

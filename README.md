@@ -5,7 +5,7 @@
 Anfragen-Check durchsucht die Antworten der Bundesregierung auf Kleine und Große Anfragen des Deutschen Bundestags (Fokus: KfW Entwicklungsbank / BMZ) und beantwortet die Frage mit **wörtlichem Zitat, Datum und PDF-Link** – oder sagt ehrlich, dass nichts gefunden wurde.
 
 - **Anfragen-Check:** Eine ganze Anfrage, eine Einzelfrage oder nur Stichworte einfügen. Die App zerlegt sie in Einzelfragen, sucht je Frage mit mehreren Suchvarianten und bewertet: *beantwortet*, *teilweise* oder *nichts gefunden*.
-- **Antworten durchsuchen:** Semantische Suche plus Stichwortsuche mit Filtern (KfW, BMZ, Vorgangstyp, Zeitraum).
+- **Antworten durchsuchen:** Semantische Suche plus Stichwortsuche mit Filtern (Vorgangstyp, Zeitraum). Jede Antwort trägt konfigurierbare **Tags** (z. B. „KfW-Bezug“, „BMZ-Bezug“).
 - **Index-Status:** Zeigt, was im Suchindex liegt und ob alles zu Ihren eigenen Dokumenten passt.
 - **Recherchevermerk:** Export je Prüfung mit Status, Zitaten und gewählten Fundstellen.
 
@@ -21,10 +21,11 @@ Anfragen-Check durchsucht die Antworten der Bundesregierung auf Kleine und Groß
 4. [Neue Dokumente hinzufügen](#neue-dokumente-hinzufügen)
 5. [Die App benutzen](#die-app-benutzen)
 6. [So funktioniert es](#so-funktioniert-es)
-7. [Kosten und Laufzeit](#kosten-und-laufzeit)
-8. [Fehlerbehebung](#fehlerbehebung)
-9. [Projektstruktur](#projektstruktur)
-10. [Grenzen und offene Punkte](#grenzen-und-offene-punkte)
+7. [Tags konfigurieren](#tags-konfigurieren)
+8. [Kosten und Laufzeit](#kosten-und-laufzeit)
+9. [Fehlerbehebung](#fehlerbehebung)
+10. [Projektstruktur](#projektstruktur)
+11. [Grenzen und offene Punkte](#grenzen-und-offene-punkte)
 
 ---
 
@@ -107,7 +108,7 @@ data/
     ├── texts/<id>.txt       ← extrahierter Volltext
     ├── chunks.jsonl         ← Textabschnitte
     ├── vectors.f32          ← Embedding-Vektoren
-    ├── flags.json           ← KfW-/BMZ-Kennzeichen je Dokument (aus dem Volltext)
+    ├── tags.json            ← Tags je Dokument (aus dem Volltext, siehe config/tags.json)
     └── manifest.json        ← Modell, Dimension, indexierte Dokumente
 ```
 
@@ -150,7 +151,7 @@ npm run ingest                 # dann alles
 - Es werden **nur Drucksachen vom Typ „Antwort“** indexiert (`INDEX_TYPEN` ändert das). Die Anfragen selbst bleiben unindexiert.
 - **Wiederholbar:** Bereits indexierte Dokumente werden übersprungen. Nach einem Abbruch macht der Lauf dort weiter.
 - **Rate-Limits:** Bei HTTP 429 wartet das Tool selbst (Retry-After, adaptive Drosselung).
-- **KfW-/BMZ-Kennzeichen** werden beim Ingest aus dem Volltext abgeleitet („KfW“, „Kreditanstalt für Wiederaufbau“, „Entwicklungsbank“ bzw. „BMZ“, „Bundesministerium für wirtschaftliche Zusammenarbeit“). Das sind Hinweise, bitte stichprobenartig prüfen.
+- **Tags** (z. B. „KfW-Bezug“) werden beim Ingest aus dem Volltext abgeleitet, Konfiguration siehe [Tags konfigurieren](#tags-konfigurieren).
 - Ein Modell- oder Dimensionswechsel erfordert einen neuen Index (`data/index` löschen). Das Tool verweigert sonst das Weiterschreiben.
 
 ---
@@ -218,7 +219,7 @@ npm run build && npm start   # Produktionsbetrieb
 | Seite | Zweck |
 |---|---|
 | `/` – **Anfragen-Check** | Anfrage oder Stichworte einfügen → **Prüfen**. Links die Einzelfragen mit Status, in der Mitte Suchanfragen (bearbeitbar), Urteil mit Zitat und Fundstellen, rechts Rechercheprotokoll und Export |
-| `/stoebern` – **Antworten durchsuchen** | Freie Suche mit Filtern für KfW, BMZ, Vorgangstyp, Zeitraum |
+| `/stoebern` – **Antworten durchsuchen** | Freie Suche mit Filtern für Vorgangstyp und Zeitraum; die Treffer tragen ihre Tags |
 | `/antwort/<id>` | Volltext einer Antwort, Link zur PDF und zum Original beim Bundestag |
 | `/index-status` – **Index** | Modell, Dimension, Azure-Host, Chunks, Abgleich mit `metadaten.jsonl` |
 
@@ -241,6 +242,42 @@ npm run build && npm start   # Produktionsbetrieb
 - Bei „nichts gefunden“ zeigt die App die verwendeten Suchanfragen und Filter und den nächsten Treffer unter der Relevanzschwelle (0,55).
 - Antworten, die älter als 12 Monate sind, werden markiert.
 - Ohne Chat-Modell gibt es nur eine Hinweis-Einstufung („teilweise“) und nie „beantwortet“.
+
+---
+
+## Tags konfigurieren
+
+Jede Antwort bekommt **Tags** wie „KfW-Bezug“ oder „BMZ-Bezug“, sichtbar auf den Trefferkarten, der Detailseite und im Index-Status. Welche Tags es gibt, steht in **`config/tags.json`** und lässt sich beliebig erweitern, auch für ganz andere Themen:
+
+```json
+{
+  "tags": [
+    { "id": "kfw", "label": "KfW-Bezug",
+      "begriffe": ["KfW", "Kreditanstalt für Wiederaufbau", "Entwicklungsbank"] },
+    { "id": "sahel", "label": "Sahel-Region",
+      "begriffe": ["Sahel", "Mali", "Niger", "Burkina Faso"] },
+    { "id": "ez", "label": "Entwicklungszusammenarbeit",
+      "begriffe": ["Entwicklungszusammenarbeit", "Entwicklungspolitik", "ODA"], "mindestens": 2 }
+  ]
+}
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `id` | Kurzname (Buchstaben, Ziffern, `-`, `_`), intern und für Filter |
+| `label` | Anzeigename im Tag |
+| `begriffe` | Begriffe, nach denen im Volltext gesucht wird (Groß-/Kleinschreibung egal) |
+| `mindestens` | Optional (Standard 1): Der Tag gilt erst, wenn mindestens so viele Begriffe im Text vorkommen. Mit `2` fallen reine Randerwähnungen heraus |
+
+Wie gesucht wird: Kurze Abkürzungen (bis 6 Zeichen mit mindestens zwei Großbuchstaben, etwa `KfW`, `BMZ`, `GIZ`, `ODA`) zählen nur als ganzes Wort. Längere Begriffe zählen auch als Wortteil, „Entwicklungsbank“ findet also auch „KfW-Entwicklungsbanken“.
+
+**Nach einer Änderung** die Tags neu berechnen. Das geht ohne neue Embeddings und dauert Sekunden:
+
+```bash
+npm run tags
+```
+
+Das Skript zeigt am Ende je Tag die Zahl der getaggten Dokumente, dieselbe Zahl steht auf `/index-status`. Neue Dokumente werden beim `ingest` automatisch getaggt. Mit `TAGS_FILE=pfad/zur/datei.json` können Sie eine andere Konfigurationsdatei verwenden.
 
 ---
 
@@ -294,8 +331,10 @@ src/
     └── demo-data.ts              Fiktive Demodaten
 scripts/
 ├── fetch.ts                      DIP-Download (Anfragen und Antworten)
+├── tags.ts                       Tags neu berechnen (ohne Embeddings)
 ├── ingest.ts                     PDF → Text → Chunks → Embeddings → Index
 └── init-data.mjs                 Datenordner anlegen
+config/tags.json                  Tag-Definitionen
 ```
 
 ---
@@ -303,7 +342,7 @@ scripts/
 ## Grenzen und offene Punkte
 
 - **Die Metadaten der DIP-API sind nicht gegen die offizielle Swagger-Doku verifiziert.** Filter- und Feldnamen wurden aus dem beobachteten Verhalten abgeleitet. Bei Änderungen der API muss `scripts/fetch.ts` angepasst werden.
-- KfW-/BMZ-Kennzeichen sind eine Textheuristik, kein offizielles Merkmal.
+- Tags sind eine Textheuristik (Begriffe im Volltext), kein offizielles Merkmal.
 - Deutsche Komposita werden bei der Stichwortsuche nur grob (Präfixe) behandelt.
 - Noch nicht umgesetzt: Chat-Agent mit Werkzeugen (`search_antworten`, `get_antwort`), Evaluationsset mit bekannten Fragen, Anmeldung per Entra ID, OCR für gescannte PDFs.
 - Das Suchverfahren hält den Index im Arbeitsspeicher. Für deutlich mehr als etwa 100.000 Chunks lohnt eine Vektordatenbank.

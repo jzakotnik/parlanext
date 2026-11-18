@@ -5,14 +5,14 @@
  * Resumable: bereits verarbeitete Dokumente (manifest.json) werden übersprungen.
  *
  * metadaten.jsonl – eine Zeile pro PDF, z. B.:
- * {"datei":"20-1234.pdf","dokumentnummer":"20/1234","datum":"2024-03-01","titel":"…","kfw":true,
- *  "bmz":true,"deskriptoren":["…"],"sachgebiete":["…"]}
+ * {"id":"12345","drucksachetyp":"Antwort","dokumentnummer":"21/1234","datum":"2025-03-01","titel":"…"}
  * ("vorgangstyp" ergibt sich sonst aus dem Ordner; "id" optional, Default = dokumentnummer)
  */
 import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
 import { extractText, getDocumentProxy } from "unpdf";
+import { tagsFor } from "../src/lib/tags";
 import { FOLDERS, INDEX_TYPEN, indexDir, pdfPath, readMetadata, safeId, textPath } from "../src/lib/store";
 import { env } from "../src/lib/env";
 
@@ -85,11 +85,9 @@ async function pdfText(file: string): Promise<string> {
   return (Array.isArray(text) ? text.join("\n") : text).replace(/[ \t]+\n/g, "\n").replace(/-\n(?=[a-zäöü])/g, "");
 }
 
-// Die DIP-Metadaten enthalten keine KfW-/BMZ-Kennzeichnung: aus dem Volltext ableiten (Hinweis, stichprobenartig prüfen)
-const KFW = /\bKfW\b|Kreditanstalt für Wiederaufbau|Entwicklungsbank/i;
-const BMZ = /\bBMZ\b|Bundesministerium für wirtschaftliche Zusammenarbeit/i;
-const flagsFile = path.join(idx, "flags.json");
-const flags: Record<string, { kfw: boolean; bmz: boolean }> = fs.existsSync(flagsFile) ? JSON.parse(fs.readFileSync(flagsFile, "utf8")) : {};
+// Tags (config/tags.json) werden aus dem Volltext abgeleitet; Änderungen an der Konfiguration: npm run tags
+const tagsFile = path.join(idx, "tags.json");
+const tagMap: Record<string, string[]> = fs.existsSync(tagsFile) ? JSON.parse(fs.readFileSync(tagsFile, "utf8")) : {};
 
 let queue: { doc: string; ord: number; content: string }[] = [];
 let pendingDocs: string[] = [];
@@ -119,7 +117,7 @@ async function flush() {
   manifest.model = env.embeddingDeployment ?? "";
   manifest.endpointHost = new URL(env.endpoint!).host;
   manifest.updated = new Date().toISOString();
-  fs.writeFileSync(flagsFile, JSON.stringify(flags));
+  fs.writeFileSync(tagsFile, JSON.stringify(tagMap));
   fs.writeFileSync(manifestFile, JSON.stringify(manifest));
   queue = [];
   pendingDocs = [];
@@ -145,7 +143,7 @@ async function main() {
     if (text.trim().length < 80 || isReferenceOnly(text)) { console.warn(`übersprungen (leer/Verweis): ${d.datei}`); pendingDocs.push(d.id); skipped++; continue; }
 
     fs.writeFileSync(textPath(d.id), text);
-    flags[d.id] = { kfw: KFW.test(text), bmz: BMZ.test(text) };
+    tagMap[d.id] = tagsFor(text);
     // Kontext-Präfix je Chunk verbessert das Retrieval
     const prefix = `${d.dokumentnummer} | ${d.datum ?? ""} | ${d.titel} | ${d.deskriptoren.join(", ")}\n`;
     chunk(text).forEach((c, ord) => queue.push({ doc: d.id, ord, content: prefix + c }));
