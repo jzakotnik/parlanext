@@ -101,7 +101,6 @@ export default function CheckWorkspace() {
     <>
       <section className="hero">
         <h1>Wurde diese Anfrage schon einmal beantwortet?</h1>
-        <p>Fügen Sie eine ganze Kleine oder Große Anfrage, eine einzelne Frage oder nur Stichworte ein. Wir durchsuchen die Antworten der Bundesregierung – und belegen jedes Ergebnis mit Zitat, Datum und Quelle.</p>
       </section>
 
       <div className={`composer-row ${busy ? "live" : ""}`}>
