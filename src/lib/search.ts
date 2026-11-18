@@ -1,14 +1,14 @@
-import { pool } from "./db";
+import fs from "node:fs";
 import { embed } from "./azure";
-import { hasDb } from "./env";
+import { hasIndex } from "./env";
 import { DEMO_DOCS } from "./demo-data";
+import { loadStore, textPath } from "./store";
+import { tokens } from "./tokens";
 import type { Filter, Hit } from "./types";
 
-import { tokens } from "./tokens";
 export { tokens };
 
 const stem = (t: string) => t.slice(0, Math.max(5, t.length - 3));
-const iso = (d: unknown) => (d instanceof Date ? d.toISOString().slice(0, 10) : d ? String(d).slice(0, 10) : null);
 
 /** Bester Absatz (Frage/Antwort-Paar) eines Textes zu einer Anfrage. */
 export function bestPassage(text: string, q: string, max = 700) {
@@ -27,19 +27,18 @@ export function bestPassage(text: string, q: string, max = 700) {
   return best.length > max ? best.slice(0, max) + " …" : best;
 }
 
+const passes = (d: { kfw: boolean; bmz: boolean; vorgangstyp: string | null; datum: string | null }, f: Filter) =>
+  (!f.kfw || d.kfw) && (!f.bmz || d.bmz) && (!f.typ || d.vorgangstyp === f.typ) &&
+  (!f.von || (d.datum ?? "") >= f.von) && (!f.bis || (d.datum ?? "9999") <= f.bis);
+
 // ---------------------------------------------------------------- Demo-Modus
 function demoSearch(query: string, f: Filter, limit: number): Hit[] {
   const qs = tokens(query).map(stem);
-  return DEMO_DOCS.filter(
-    (d) =>
-      (!f.kfw || d.kfw) && (!f.bmz || d.bmz) && (!f.typ || d.vorgangstyp === f.typ) &&
-      (!f.von || d.datum >= f.von) && (!f.bis || d.datum <= f.bis),
-  )
+  return DEMO_DOCS.filter((d) => passes(d, f))
     .map((d) => {
       const hay = (d.titel + " " + d.deskriptoren.join(" ") + " " + d.text).toLowerCase();
       const hit = qs.filter((t) => hay.includes(t)).length;
-      const relevanz = qs.length ? Math.min(0.95, (hit / qs.length) * 0.9) : 0.5;
-      return { d, relevanz };
+      return { d, relevanz: qs.length ? Math.min(0.95, (hit / qs.length) * 0.9) : 0.5 };
     })
     .filter((x) => !qs.length || x.relevanz > 0)
     .sort((a, b) => b.relevanz - a.relevanz || b.d.datum.localeCompare(a.d.datum))
@@ -51,78 +50,85 @@ function demoSearch(query: string, f: Filter, limit: number): Hit[] {
 }
 
 // -------------------------------------------------------------- Hybrid-Suche
+// Vektoren (Azure-Embeddings) + Stichwortsuche, per Reciprocal Rank Fusion – im Speicher, ohne Datenbank.
 export async function searchAntworten(query: string, f: Filter = {}, limit = 10): Promise<Hit[]> {
-  if (!hasDb()) return demoSearch(query, f, limit);
+  const store = hasIndex() ? loadStore() : null;
+  if (!store) return demoSearch(query, f, limit);
 
-  const p = pool();
-  const where: string[] = [];
-  const params: unknown[] = [];
-  const add = (v: unknown) => {
-    params.push(v);
-    return `$${params.length}`;
+  const toHit = (docId: string, passage: string, relevanz: number): Hit => {
+    const d = store.docs.get(docId)!;
+    return {
+      id: d.id, dokumentnummer: d.dokumentnummer, datum: d.datum, titel: d.titel, vorgangstyp: d.vorgangstyp,
+      kfw: d.kfw, bmz: d.bmz, pdf_url: `/api/pdf/${encodeURIComponent(d.id)}`, passage, relevanz,
+    };
   };
-  if (f.kfw) where.push("d.kfw");
-  if (f.bmz) where.push("d.bmz");
-  if (f.typ) where.push(`d.vorgangstyp = ${add(f.typ)}`);
-  if (f.von) where.push(`d.datum >= ${add(f.von)}`);
-  if (f.bis) where.push(`d.datum <= ${add(f.bis)}`);
-  const W = where.length ? "AND " + where.join(" AND ") : "";
-  const sel = `d.id, d.dokumentnummer, d.datum, d.titel, d.vorgangstyp, d.kfw, d.bmz, d.pdf_url`;
 
   if (!query.trim()) {
-    const { rows } = await p.query(
-      `SELECT ${sel}, left(d.text, 600) AS passage FROM drucksache d WHERE true ${W} ORDER BY d.datum DESC NULLS LAST LIMIT ${limit}`,
-      params,
-    );
-    return rows.map((r) => ({ ...r, datum: iso(r.datum), passage: r.passage ?? "", relevanz: 0 }));
+    return [...store.docs.values()].filter((d) => passes(d, f))
+      .sort((a, b) => (b.datum ?? "").localeCompare(a.datum ?? "")).slice(0, limit)
+      .map((d) => toHit(d.id, readText(d.id).slice(0, 600), 0));
   }
 
-  const vec = (await embed([query]))?.[0];
-  const qParam = add(query);
-  const vParam = vec ? add(`[${vec.join(",")}]`) : null;
+  const { chunks, vectors, dim, docs } = store;
+  const ok = chunks.map((c) => docs.has(c.doc) && passes(docs.get(c.doc)!, f));
 
-  const vecCte = vParam
-    ? `v AS (SELECT c.id, 1 - (c.embedding <=> ${vParam}::vector) AS sim,
-                 row_number() OVER (ORDER BY c.embedding <=> ${vParam}::vector) AS r
-          FROM chunk c JOIN drucksache d ON d.id = c.drucksache_id
-          WHERE c.embedding IS NOT NULL ${W}
-          ORDER BY c.embedding <=> ${vParam}::vector LIMIT 60),`
-    : "";
-  const unionV = vParam ? "SELECT id, r FROM v UNION ALL" : "";
-  const simJoin = vParam ? "LEFT JOIN v ON v.id = c.id" : "";
-  const simCol = vParam ? "v.sim" : "NULL::float";
+  // 1) Vektor: Kosinus (text-embedding-3 liefert normierte Vektoren)
+  const qv = (await embed([query]))?.[0];
+  const sim = new Float32Array(chunks.length).fill(-1);
+  if (qv) {
+    for (let i = 0; i < chunks.length; i++) {
+      if (!ok[i]) continue;
+      let s = 0;
+      const o = i * dim;
+      for (let k = 0; k < dim; k++) s += vectors[o + k] * qv[k];
+      sim[i] = s;
+    }
+  }
 
-  const sql = `
-    WITH ${vecCte}
-    f AS (SELECT c.id, row_number() OVER (ORDER BY ts_rank_cd(c.tsv, q) DESC) AS r, ts_rank_cd(c.tsv, q) AS rank
-          FROM chunk c JOIN drucksache d ON d.id = c.drucksache_id, websearch_to_tsquery('german', ${qParam}) q
-          WHERE c.tsv @@ q ${W} ORDER BY ts_rank_cd(c.tsv, q) DESC LIMIT 60),
-    fused AS (SELECT id, sum(1.0 / (60 + r)) AS score FROM (${unionV} SELECT id, r FROM f) u GROUP BY id)
-    SELECT ${sel}, c.content AS passage, fused.score, ${simCol} AS sim, f.rank AS fts
-    FROM fused JOIN chunk c ON c.id = fused.id JOIN drucksache d ON d.id = c.drucksache_id
-    ${simJoin} LEFT JOIN f ON f.id = c.id
-    ORDER BY fused.score DESC LIMIT ${limit * 4}`;
-  const { rows } = await p.query(sql, params);
+  // 2) Stichwort: IDF-gewichtete Präfix-Treffer (grober Ersatz für Stemming/Dekomposition)
+  const terms = [...new Set(tokens(query).map(stem))];
+  const lows = chunks.map((c) => c.content.toLowerCase());
+  const idf = terms.map((t) => {
+    let n = 0;
+    for (let i = 0; i < lows.length; i++) if (ok[i] && lows[i].includes(t)) n++;
+    return Math.log(1 + chunks.length / (1 + n));
+  });
+  const kw = new Float32Array(chunks.length);
+  for (let i = 0; i < chunks.length; i++) {
+    if (!ok[i]) continue;
+    terms.forEach((t, j) => { if (lows[i].includes(t)) kw[i] += idf[j]; });
+  }
 
+  const rank = (score: ArrayLike<number>, min: number) =>
+    [...chunks.keys()].filter((i) => ok[i] && score[i] > min).sort((a, b) => score[b] - score[a]).slice(0, 60);
+  const fused = new Map<number, number>();
+  for (const list of [rank(sim, -0.5), rank(kw, 0)]) list.forEach((i, r) => fused.set(i, (fused.get(i) ?? 0) + 1 / (60 + r)));
+
+  const kwMax = idf.reduce((a, b) => a + b, 0) || 1;
   const seen = new Set<string>();
   const hits: Hit[] = [];
-  for (const r of rows) {
-    if (seen.has(r.id)) continue;
-    seen.add(r.id);
-    // Cosinus-Ähnlichkeit, falls vorhanden; sonst grobe Näherung aus FTS-Rang
-    const relevanz = r.sim != null ? Number(r.sim) : Math.min(0.9, 0.45 + Number(r.fts ?? 0));
-    hits.push({ ...r, datum: iso(r.datum), passage: r.passage, relevanz });
+  for (const [i] of [...fused].sort((a, b) => b[1] - a[1])) {
+    const c = chunks[i];
+    if (seen.has(c.doc)) continue;
+    seen.add(c.doc);
+    const relevanz = qv ? Math.max(0, sim[i]) : Math.min(0.95, kw[i] / kwMax);
+    hits.push(toHit(c.doc, c.content, relevanz));
     if (hits.length >= limit) break;
   }
   return hits;
 }
 
+function readText(id: string) {
+  try { return fs.readFileSync(textPath(id), "utf8"); } catch { return ""; }
+}
+
 export async function getAntwort(id: string) {
-  if (!hasDb()) {
+  const store = hasIndex() ? loadStore() : null;
+  if (!store) {
     const d = DEMO_DOCS.find((x) => x.id === id);
-    return d ? { ...d, pdf_url: null as string | null, sachgebiete: [] as string[], demo: true } : null;
+    return d ? { ...d, pdf_url: null as string | null, demo: true } : null;
   }
-  const { rows } = await pool().query(`SELECT * FROM drucksache WHERE id = $1 OR dokumentnummer = $1 LIMIT 1`, [id]);
-  const r = rows[0];
-  return r ? { ...r, datum: iso(r.datum) as string, demo: false } : null;
+  const d = store.docs.get(id) ?? [...store.docs.values()].find((x) => x.dokumentnummer === id);
+  if (!d) return null;
+  return { ...d, pdf_url: `/api/pdf/${encodeURIComponent(d.id)}`, text: readText(d.id), demo: false };
 }

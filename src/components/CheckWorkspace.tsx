@@ -173,7 +173,7 @@ export default function CheckWorkspace() {
               <ol>{f.protokoll.map((p) => <li key={p.query}>„{p.query}“ <span className="tag">{p.treffer} Treffer</span></li>)}</ol>
               <p style={{ color: "var(--ink-3)", margin: "10px 0 0" }}>
                 Filter: {[filter.kfw && "KfW", filter.bmz && "BMZ", filter.von && `ab ${fmtDate(filter.von)}`].filter(Boolean).join(", ") || "keine"} · Schwelle {pct(data.schwelle)}
-                <br />Modus: {data.modus.ki ? "KI-Bewertung" : "ohne KI"} · {data.modus.datenbank ? "Datenbank" : "Demo-Daten"}
+                <br />Modus: {data.modus.ki ? "KI-Bewertung" : "ohne KI"} · {data.modus.datenbank ? "Suchindex" : "Demo-Daten"}
               </p>
             </div>
             <div className="card log">

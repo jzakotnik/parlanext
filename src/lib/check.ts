@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { chatJSON } from "./azure";
-import { hasChat, hasDb } from "./env";
+import { hasChat, hasIndex } from "./env";
 import { searchAntworten, tokens } from "./search";
 import { SCHWELLE, type CheckResponse, type Filter, type FrageResult, type Hit, type Status } from "./types";
 
@@ -124,5 +124,5 @@ export async function pruefeFrage(f: FrageInput, idx: number, filter: Filter): P
 export async function pruefe(input: { text?: string; fragen?: FrageInput[]; filter?: Filter }): Promise<CheckResponse> {
   const fragen = input.fragen?.length ? input.fragen : await zerlege(input.text ?? "");
   const results = await Promise.all(fragen.slice(0, 12).map((f, i) => pruefeFrage(f, i, input.filter ?? {})));
-  return { fragen: results, modus: { ki: hasChat(), datenbank: hasDb() }, schwelle: SCHWELLE };
+  return { fragen: results, modus: { ki: hasChat(), datenbank: hasIndex() }, schwelle: SCHWELLE };
 }
