@@ -17,8 +17,8 @@ npm run data:init    # legt data/ an (falls nicht vorhanden)
 ```
 ```
 data/
-  kleine-anfragen/   *.pdf  + metadaten.jsonl
-  grosse-anfragen/   *.pdf  + metadaten.jsonl
+  kleine_anfragen/   *.pdf  + metadaten.jsonl
+  grosse_anfragen/   *.pdf  + metadaten.jsonl
   index/             (wird erzeugt) texts/, chunks.jsonl, vectors.f32, manifest.json
 ```
 `metadaten.jsonl`: eine Zeile je PDF, z. B.
