@@ -111,7 +111,7 @@ async function main() {
   const alle = readMetadata();
   const docs = alle.filter((d) => INDEX_TYPEN.includes(d.drucksachetyp));
   console.log(`${docs.length} von ${alle.length} Metadatenzeilen haben Typ ${INDEX_TYPEN.join("/")} (übrige werden nicht indexiert).`);
-  if (!docs.length) console.warn("Keine Antworten gefunden – zuerst npm run fetch-antworten ausführen.");
+  if (!docs.length) console.warn("Keine Antworten gefunden – zuerst npm run fetch ausführen.");
   if (!docs.length) console.warn("Keine Einträge in data/*/metadaten.jsonl gefunden.");
   let n = 0, skipped = 0;
 

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "data:init": "node scripts/init-data.mjs",
-    "fetch-antworten": "tsx --env-file=.env.local scripts/fetch-antworten.ts",
+    "fetch": "tsx --env-file=.env.local scripts/fetch.ts",
     "ingest": "tsx --env-file=.env.local scripts/ingest.ts"
   },
   "dependencies": {
