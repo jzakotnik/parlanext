@@ -23,6 +23,12 @@ export const viewport: Viewport = {
     { media: "(prefers-color-scheme: dark)", color: "#062254" },
   ],
 };
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#eef2fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#062254" },
+  ],
+};
 export const dynamic = "force-dynamic";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
