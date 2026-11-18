@@ -71,7 +71,7 @@ async function embedBatch(inputs: string[], attempt = 0): Promise<number[][]> {
 }
 
 async function pdfText(file: string): Promise<string> {
-  const pdf = await getDocumentProxy(new Uint8Array(fs.readFileSync(file)));
+  const pdf = await getDocumentProxy(new Uint8Array(fs.readFileSync(file)), { verbosity: 0 });
   const { text } = await extractText(pdf, { mergePages: true });
   return (Array.isArray(text) ? text.join("\n") : text).replace(/[ \t]+\n/g, "\n").replace(/-\n(?=[a-zäöü])/g, "");
 }
