@@ -317,6 +317,7 @@ Richtwerte, keine Zusagen. Preise und Quoten hängen von Ihrer Azure-Resource ab
 | `Keine Antworten gefunden` | In `metadaten.jsonl` steht kein `"drucksachetyp":"Antwort"`. Zuerst `npm run fetch` ausführen oder `INDEX_TYPEN` anpassen |
 | App zeigt „Demo-Modus“ | Es gibt noch keinen Index (`data/index/manifest.json`). Zuerst `npm run ingest` |
 | Prüfung zeigt „Heuristik“/„ohne KI“ | Chat-Deployment fehlt oder der Aufruf scheitert. `AZURE_CHAT_DEPLOYMENT` und Quota prüfen |
+| „Die Verbindung zum Server wurde vor dem Ergebnis unterbrochen“ | Der Stream wurde abgeschnitten, ohne dass ein Fehler gemeldet wurde. Prüfen: `pm2 status` (Spalte ↺ = Neustarts, z. B. wegen `max_memory_restart`; ein Index mit 60.000 Chunks braucht rund 0,5–1 GB), `sudo tail /var/log/nginx/error.log` (`upstream timed out` oder `prematurely closed`) und im Nginx-Block für `/api/check` `proxy_buffering off` sowie `proxy_read_timeout 300s`. Die App sendet alle 8 s einen Ping, damit Proxys die Verbindung nicht wegen Stille trennen |
 | Index soll neu aufgebaut werden | `data/index` löschen und `npm run ingest` erneut ausführen |
 
 ---

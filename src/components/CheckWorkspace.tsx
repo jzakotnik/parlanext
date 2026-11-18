@@ -45,7 +45,7 @@ export default function CheckWorkspace() {
       }
       if (done) break;
     }
-    if (!result) throw new Error("Die Prüfung wurde unvollständig beendet. Bitte erneut versuchen.");
+    if (!result) throw new Error("Die Verbindung zum Server wurde vor dem Ergebnis unterbrochen (Proxy-Timeout oder Neustart der App). Bitte erneut versuchen; Hinweise stehen im README unter Fehlerbehebung.");
     return result;
   }
 

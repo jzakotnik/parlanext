@@ -22,13 +22,16 @@ export async function POST(req: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       const send = (o: unknown) => { try { controller.enqueue(enc.encode(JSON.stringify(o) + "\n")); } catch { /* Client weg */ } };
+      // Lange GPT-Aufrufe liefern minutenlang keine Meldung: ein Ping alle 8 s hält die Verbindung offen
+      // (sonst trennen Proxys wie nginx nach 60 s Stille, ohne dass jemand einen Fehler sieht).
+      const ping = setInterval(() => send({ type: "ping" }), 8000);
       try {
         const data = await pruefe(input, (msg, level) => send({ type: "log", msg, level: level ?? "info" }));
         send({ type: "result", data });
       } catch (e) {
         console.error(e);
         send({ type: "error", msg: "Prüfung fehlgeschlagen" });
-      } finally { controller.close(); }
+      } finally { clearInterval(ping); controller.close(); }
     },
   });
   return new Response(stream, {

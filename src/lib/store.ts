@@ -99,7 +99,9 @@ export function loadStore(): Store | null {
     .slice(0, m.chunks)
     .map((l) => JSON.parse(l) as Chunk);
   const buf = fs.readFileSync(path.join(indexDir(), "vectors.f32"));
-  const vectors = new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + m.chunks * m.dim * 4));
+  // Ohne Kopie als Float32-Sicht auf den Dateipuffer (nur kopieren, falls nicht 4-Byte-ausgerichtet)
+  const len = m.chunks * m.dim;
+  const vectors = buf.byteOffset % 4 === 0 ? new Float32Array(buf.buffer, buf.byteOffset, len) : new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + len * 4));
   g.__store = { docs, chunks, vectors, dim: m.dim, mtime };
   return g.__store;
 }
