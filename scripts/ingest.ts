@@ -18,6 +18,7 @@ import { env } from "../src/lib/env";
 
 const limit = Number(process.argv[process.argv.indexOf("--limit") + 1]) || Infinity;
 const DIM = env.dimensions;
+const MAX_TOKENS = Number(process.env.EMBED_MAX_TOKENS) || 100000; // je Anfrage (Azure-Limit: 300.000)
 const BATCH = Number(process.env.EMBED_BATCH) || 32; // kleiner = weniger Token pro Anfrage (bei knapper Quota verringern)
 const ai = new OpenAI({ baseURL: env.endpoint, apiKey: env.apiKey, maxRetries: 0 });
 
@@ -95,14 +96,25 @@ let pendingDocs: string[] = [];
 
 async function flush() {
   if (!queue.length && !pendingDocs.length) return;
-  if (queue.length) {
-    const vecs = await embedBatch(queue.map((q) => q.content));
+  // Die Warteschlange kann (bei langen Dokumenten) viel größer als ein Batch sein: in Scheiben schicken.
+  // Limits: max. BATCH Texte und max. ~MAX_TOKENS (grob geschätzt, 1 Token ≈ 3 Zeichen) je Anfrage.
+  const estTokens = (t: string) => Math.ceil(t.length / 3);
+  let i = 0;
+  while (i < queue.length) {
+    const slice: typeof queue = [];
+    let tok = 0;
+    while (i < queue.length && slice.length < BATCH && (slice.length === 0 || tok + estTokens(queue[i].content) <= MAX_TOKENS)) {
+      tok += estTokens(queue[i].content);
+      slice.push(queue[i++]);
+    }
+    const vecs = await embedBatch(slice.map((q) => q.content));
     const f32 = new Float32Array(vecs.length * DIM);
-    vecs.forEach((v, i) => f32.set(v, i * DIM));
+    vecs.forEach((v, k) => f32.set(v, k * DIM));
     fs.appendFileSync(vecFile, Buffer.from(f32.buffer));
-    fs.appendFileSync(chunksFile, queue.map((q) => JSON.stringify(q)).join("\n") + "\n");
-    manifest.chunks += queue.length;
+    fs.appendFileSync(chunksFile, slice.map((q) => JSON.stringify(q)).join("\n") + "\n");
+    // manifest.chunks wird erst am Ende des Flush gesetzt – bei Abbruch wird zurückgeschnitten
   }
+  manifest.chunks += queue.length;
   manifest.docs.push(...pendingDocs);
   manifest.model = env.embeddingDeployment ?? "";
   manifest.endpointHost = new URL(env.endpoint!).host;
