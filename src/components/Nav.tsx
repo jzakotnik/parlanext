@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 const items = [
   { href: "/", label: "Anfragen-Check" },
   { href: "/stoebern", label: "Antworten durchsuchen" },
+  { href: "/index-status", label: "Index" },
 ];
 
 export default function Nav() {
