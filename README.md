@@ -9,6 +9,9 @@ Anfragen-Check durchsucht die Antworten der Bundesregierung auf Kleine und Groß
 - **Index-Status:** Zeigt, was im Suchindex liegt und ob alles zu Ihren eigenen Dokumenten passt.
 - **Recherchevermerk:** Export je Prüfung mit Status, Zitaten und gewählten Fundstellen.
 
+![Anfragen-Check: Eine Frage eingeben, die App erzeugt Suchvarianten und belegt das Ergebnis](assets/screenshot2.png)
+*Anfragen-Check: Die Frage wird in Suchvarianten übersetzt, das Ergebnis mit Status, Entitäten und Rechercheprotokoll gezeigt.*
+
 **Technik:** Next.js 15 (App Router, TypeScript) · Azure (Foundry) für Embeddings (`text-embedding-3-large`, 1536 Dimensionen) und das Chat-Modell (GPT-6 Astra) · **keine Datenbank**: PDFs, Metadaten und der Suchindex liegen als Dateien im Ordner `data/` (nicht im Git).
 
 ---
@@ -223,9 +226,15 @@ npm run build && npm start   # Produktionsbetrieb
 | `/antwort/<id>` | Volltext einer Antwort, Link zur PDF und zum Original beim Bundestag |
 | `/index-status` – **Index** | Modell, Dimension, Azure-Host, Chunks, Abgleich mit `metadaten.jsonl` |
 
+![Antworten durchsuchen: Suchfeld mit Filtern und Trefferliste mit PDF-Link](assets/screenshot1.png)
+*Antworten durchsuchen: Suche über alle indexierten Antworten, filterbar nach Vorgangstyp und Zeitraum, mit Volltext und PDF-Link je Treffer.*
+
 **Live-Ablauf:** Während einer Prüfung zeigt die App neben dem Eingabefeld, was gerade passiert (Anfrage zerlegen, Suchvarianten erzeugen, Index durchsuchen, Treffer bewerten, Zitat verifizieren), samt Zeitstempeln und Warnungen, etwa wenn ein GPT-Aufruf scheitert. Nach der Prüfung verschwindet das Fenster; das bleibende Protokoll steht rechts im Ergebnis. Es zeigt Schritte der App, nicht die internen Gedanken des Modells.
 
 **Ergebnis lesen:** Der Status steht immer als Text und Symbol, nie nur als Farbe. Die Erklärung „Modus: KI-Bewertung“ oder „ohne KI“ steht im Rechercheprotokoll. Sehen Sie dort „ohne KI“ oder die Markierung „Heuristik“, obwohl `AZURE_CHAT_DEPLOYMENT` gesetzt ist, ist der Chat-Aufruf fehlgeschlagen (z. B. falscher Deployment-Name oder keine Quota).
+
+![Fundstellen mit Tags, Relevanz und hervorgehobenen Suchbegriffen, daneben das Rechercheprotokoll](assets/screenshot3.png)
+*Fundstellen mit Tags („KfW-Bezug“, „BMZ-Bezug“, „Entwicklungszusammenarbeit“), Relevanz in Prozent und hervorgehobenen Suchbegriffen. Rechts das Rechercheprotokoll mit allen zehn Suchvarianten und deren Trefferzahl.*
 
 ---
 
