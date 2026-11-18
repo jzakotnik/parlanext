@@ -23,15 +23,32 @@ const Judge = z.object({
 
 export type FrageInput = { text: string; entitaeten?: string[]; varianten?: string[] };
 
+/** Begrenzte Parallelität: bis zu ~11 Suchanfragen je Frage würden sonst das Embedding-Rate-Limit treffen. */
+async function mapLimit<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (i < items.length) { const k = i++; out[k] = await fn(items[k]); }
+  }));
+  return out;
+}
+
 const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 
 /** Schritt 1: Anfrage in Einzelfragen + Entitäten + Suchvarianten zerlegen. */
 export async function zerlege(text: string): Promise<FrageInput[]> {
   const ai = await chatJSON<unknown>(
-    `Du bist Rechercheassistent für parlamentarische Anfragen an die Bundesregierung (Kontext: KfW Entwicklungsbank, BMZ).
+    `Du bist Rechercheassistent für parlamentarische Anfragen an die Bundesregierung. Fachgebiet: Entwicklungszusammenarbeit (EZ), internationale Zusammenarbeit, Entwicklungsfinanzierung, KfW Entwicklungsbank, Entwicklungshilfe und verwandte Themen (BMZ, Auswärtiges Amt, Haushalt/Einzelplan 23, multilaterale Organisationen, Klimafinanzierung, humanitäre Hilfe, Wiederaufbau).
 Zerlege den Text in Einzelfragen. Antworte NUR als JSON: {"fragen":[{"text":string,"entitaeten":string[],"varianten":string[]}]}.
-"entitaeten": Länder, Programme, Institutionen, Zeiträume. "varianten": 3 deutsche Suchanfragen (wörtlich, Synonyme, Deskriptor-nah).
-Ist der Text nur ein Stichwort oder eine einzelne Frage, gib genau eine Einzelfrage zurück. Erfinde nichts.`,
+"entitaeten": Länder, Regionen, Programme, Institutionen, Zeiträume, Beträge.
+"varianten": genau 10 verschiedene deutsche Suchanfragen für diese Einzelfrage, damit auch anders formulierte frühere Antworten gefunden werden. Mische:
+- wörtliche und umformulierte Fassungen der Frage,
+- Fachbegriffe und Synonyme der Domäne, z. B. Finanzielle Zusammenarbeit (FZ), Technische Zusammenarbeit (TZ), Official Development Assistance (ODA), Entwicklungsbank, KfW Entwicklungsbank, DEG, GIZ, Zusagen/Neuzusagen/Auszahlungen/Mittelabfluss, Verpflichtungsermächtigungen, Partnerländer, Vorhaben/Projekte/Programme, Wirksamkeit/Evaluierung, Klimafinanzierung, Kofinanzierung, Zuschüsse/Darlehen/Förderkredite,
+- Abkürzungen ausgeschrieben und umgekehrt (BMZ = Bundesministerium für wirtschaftliche Zusammenarbeit und Entwicklung),
+- kurze Stichwortanfragen (3 bis 6 Wörter) mit Land/Programm/Zeitraum und Schlagwörter, wie sie in Bundestagsdrucksachen vorkommen (Deskriptoren),
+- allgemeinere und speziellere Fassungen (Oberbegriff und Detail).
+Gib keine Variante mehrfach aus und erfinde keine Fakten, Zahlen oder Namen, die nicht im Text vorkommen.
+Ist der Text nur ein Stichwort oder eine einzelne Frage, gib genau eine Einzelfrage zurück.`,
     text,
   ).catch(() => null);
   const parsed = Decomp.safeParse(ai);
@@ -67,12 +84,12 @@ Ohne Beleg: status "nichts". "beantwortet" nur, wenn alle Aspekte der Frage (Zei
 
 /** Schritt 2–4: suchen, bewerten, Beleg verifizieren. */
 export async function pruefeFrage(f: FrageInput, idx: number, filter: Filter): Promise<FrageResult> {
-  const queries = [...new Set([f.text, ...(f.varianten ?? [])].map((q) => q.trim()).filter(Boolean))];
+  const queries = [...new Set([f.text, ...(f.varianten ?? []).slice(0, 10)].map((q) => q.trim()).filter(Boolean))];
   const protokoll: FrageResult["protokoll"] = [];
   const byId = new Map<string, Hit>();
   const score = new Map<string, number>();
 
-  const runs = await Promise.all(queries.map((q) => searchAntworten(q, filter, 8)));
+  const runs = await mapLimit(queries, 4, (q) => searchAntworten(q, filter, 8));
   runs.forEach((hits, qi) => {
     protokoll.push({ query: queries[qi], treffer: hits.length });
     hits.forEach((h, r) => {
@@ -123,6 +140,7 @@ export async function pruefeFrage(f: FrageInput, idx: number, filter: Filter): P
 
 export async function pruefe(input: { text?: string; fragen?: FrageInput[]; filter?: Filter }): Promise<CheckResponse> {
   const fragen = input.fragen?.length ? input.fragen : await zerlege(input.text ?? "");
-  const results = await Promise.all(fragen.slice(0, 12).map((f, i) => pruefeFrage(f, i, input.filter ?? {})));
+  const liste = fragen.slice(0, 12);
+  const results = await mapLimit(liste, 2, (f) => pruefeFrage(f, liste.indexOf(f), input.filter ?? {}));
   return { fragen: results, modus: { ki: hasChat(), datenbank: hasIndex() }, schwelle: SCHWELLE };
 }
