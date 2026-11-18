@@ -36,3 +36,7 @@ export type CheckResponse = {
 export type Filter = { kfw?: boolean; bmz?: boolean; von?: string; bis?: string; typ?: string };
 
 export const SCHWELLE = 0.55;
+
+/** Fortschrittsmeldung der Prüfung (wird live an die Oberfläche gestreamt). */
+export type LogLevel = "info" | "ok" | "warn";
+export type Emit = (msg: string, level?: LogLevel) => void;
