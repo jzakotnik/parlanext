@@ -353,6 +353,7 @@ assets/icon-source.webp           Quelle für Favicons/App-Icons (neu erzeugen: 
 
 ## Datenschutz
 
+- **Keine Indexierung:** Die App sperrt Suchmaschinen und bekannte KI-Crawler dreifach: `robots.txt` (Disallow für alle), Meta-Tag `robots` mit `noindex, nofollow, noarchive, nosnippet, noimageindex` und der HTTP-Header `X-Robots-Tag` auf allen Antworten, auch PDFs und API. Das sind Bitten an Crawler, die sich daran halten, kein Zugriffsschutz. Für echten Schutz setzen Sie die App hinter eine Anmeldung oder ein internes Netz.
 - Die Korpus-PDFs sind öffentliche Bundestagsdrucksachen. Neu eingefügte Anfragen und Suchtexte werden an Ihre Azure-Resource gesendet.
 - Der Embeddings-Dienst speichert keine Daten. Der Index liegt ausschließlich lokal in `data/` (gitignored).
 - API-Schlüssel gehören nur in `.env.local`, nicht ins Repository.
