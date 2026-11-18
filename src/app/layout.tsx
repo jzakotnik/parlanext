@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Nav from "@/components/Nav";
-import { hasDb } from "@/lib/env";
+import { hasIndex } from "@/lib/env";
 
 export const metadata: Metadata = {
   title: "Anfragen-Check – Parlamentarische Anfragen zur KfW Entwicklungsbank",
@@ -15,10 +15,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <div className="wrap">
           <Nav />
-          {!hasDb() && (
+          {!hasIndex() && (
             <div className="banner" role="status">
               <span aria-hidden>⚠︎</span>
-              <span><b>Demo-Modus:</b> Es ist keine Datenbank verbunden. Angezeigt werden fiktive Beispieldaten – siehe README zur Einrichtung.</span>
+              <span><b>Demo-Modus:</b> Es ist noch kein Suchindex vorhanden (npm run ingest). Angezeigt werden fiktive Beispieldaten – siehe README zur Einrichtung.</span>
             </div>
           )}
           {children}

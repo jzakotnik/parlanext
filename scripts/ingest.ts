@@ -1,49 +1,63 @@
 /**
- * Ingest: anfragen.jsonl (aus dip_anfragen.py) -> Postgres (drucksache + chunk + Embeddings)
- * Aufruf: npm run ingest -- ./anfragen.jsonl [--limit 50]
- * Resumable: Drucksachen, die schon Chunks haben, werden übersprungen.
+ * Ingest: data/{kleine,grosse}-anfragen/*.pdf + metadaten.jsonl -> Textcache, Chunks, Azure-Embeddings.
+ * Ergebnis (alles in data/index, gitignored): texts/*.txt, chunks.jsonl, vectors.f32, manifest.json
+ * Aufruf: npm run ingest [-- --limit 50]
+ * Resumable: bereits verarbeitete Dokumente (manifest.json) werden übersprungen.
  *
- * Erwartete Felder je Zeile (bitte gegen die Ausgabe von dip_anfragen.py prüfen):
- * id, datum, dokumentnummer, titel, vorgangstyp, kfw, bmz, ez_deskriptor,
- * deskriptoren[], sachgebiete[], pdf_url, text
+ * metadaten.jsonl – eine Zeile pro PDF, z. B.:
+ * {"datei":"20-1234.pdf","dokumentnummer":"20/1234","datum":"2024-03-01","titel":"…","kfw":true,
+ *  "bmz":true,"deskriptoren":["…"],"sachgebiete":["…"]}
+ * ("vorgangstyp" ergibt sich sonst aus dem Ordner; "id" optional, Default = dokumentnummer)
  */
 import fs from "node:fs";
-import readline from "node:readline";
-import { Pool } from "pg";
+import path from "node:path";
 import OpenAI from "openai";
+import { extractText, getDocumentProxy } from "unpdf";
+import { FOLDERS, indexDir, pdfPath, readMetadata, safeId, textPath } from "../src/lib/store";
+import { env } from "../src/lib/env";
 
-const file = process.argv[2] ?? "anfragen.jsonl";
 const limit = Number(process.argv[process.argv.indexOf("--limit") + 1]) || Infinity;
-const DIM = Number(process.env.EMBEDDING_DIMENSIONS ?? 1536);
+const DIM = env.dimensions;
 const BATCH = 64;
+const ai = new OpenAI({ baseURL: env.endpoint, apiKey: env.apiKey });
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const ai = new OpenAI({ baseURL: process.env.AZURE_OPENAI_ENDPOINT, apiKey: process.env.AZURE_OPENAI_API_KEY });
-const MODEL = process.env.AZURE_EMBEDDING_DEPLOYMENT!;
+const idx = indexDir();
+fs.mkdirSync(path.join(idx, "texts"), { recursive: true });
+for (const f of FOLDERS) fs.mkdirSync(path.join(env.dataDir, f.dir), { recursive: true });
+const manifestFile = path.join(idx, "manifest.json");
+const chunksFile = path.join(idx, "chunks.jsonl");
+const vecFile = path.join(idx, "vectors.f32");
 
-type Row = {
-  id: string; datum?: string; dokumentnummer?: string; titel?: string; vorgangstyp?: string;
-  kfw?: boolean; bmz?: boolean; ez_deskriptor?: boolean; deskriptoren?: string[]; sachgebiete?: string[];
-  pdf_url?: string; text?: string;
-};
+type Manifest = { dim: number; model: string; chunks: number; docs: string[] };
+const manifest: Manifest = fs.existsSync(manifestFile)
+  ? JSON.parse(fs.readFileSync(manifestFile, "utf8"))
+  : { dim: DIM, model: env.embeddingDeployment ?? "", chunks: 0, docs: [] };
+if (manifest.dim !== DIM || (manifest.model && manifest.model !== env.embeddingDeployment))
+  throw new Error(`Index wurde mit ${manifest.model}/${manifest.dim} erzeugt – Modellwechsel erfordert neuen Index (data/index löschen).`);
 
-/** Pro Frage/Antwort-Paar ("1. …") chunken, Fallback: ~2000 Zeichen mit 200 Überlappung. */
+// Nach Absturz: Dateien auf den Stand des Manifests zurückschneiden
+if (fs.existsSync(vecFile)) fs.truncateSync(vecFile, manifest.chunks * DIM * 4);
+if (fs.existsSync(chunksFile)) {
+  const keep = fs.readFileSync(chunksFile, "utf8").split("\n").filter(Boolean).slice(0, manifest.chunks);
+  fs.writeFileSync(chunksFile, keep.length ? keep.join("\n") + "\n" : "");
+}
+
+/** Pro Frage/Antwort-Paar ("1. …") chunken, Fallback ~2000 Zeichen mit Überlappung. */
 function chunk(text: string): string[] {
   const pairs = text.split(/\n(?=\s*\d+\.\s)/).map((s) => s.trim()).filter((s) => s.length > 40);
   const out: string[] = [];
-  for (const p of pairs.length > 1 ? pairs : [text]) {
+  for (const p of pairs.length > 1 ? pairs : [text.trim()]) {
     if (p.length <= 2400) out.push(p);
     else for (let i = 0; i < p.length; i += 1800) out.push(p.slice(i, i + 2000));
   }
   return out;
 }
 
-/** Antworten, die nur auf andere Antworten verweisen, überspringen. */
 const isReferenceOnly = (t: string) => t.length < 600 && /siehe (die )?antwort|verweis/i.test(t);
 
 async function embedBatch(inputs: string[], attempt = 0): Promise<number[][]> {
   try {
-    const r = await ai.embeddings.create({ model: MODEL, input: inputs, dimensions: DIM });
+    const r = await ai.embeddings.create({ model: env.embeddingDeployment!, input: inputs, dimensions: DIM });
     return r.data.map((d) => d.embedding);
   } catch (e: any) {
     if (e?.status === 429 && attempt < 6) {
@@ -56,52 +70,58 @@ async function embedBatch(inputs: string[], attempt = 0): Promise<number[][]> {
   }
 }
 
-async function main() {
-  await pool.query(
-    `INSERT INTO config(key,value) VALUES ('embedding_model',$1),('embedding_dimensions',$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,
-    [MODEL, String(DIM)],
-  );
-  const done = new Set((await pool.query(`SELECT DISTINCT drucksache_id FROM chunk`)).rows.map((r) => r.drucksache_id));
-  const rl = readline.createInterface({ input: fs.createReadStream(file) });
-  let n = 0, skipped = 0;
-  let queue: { id: string; ord: number; content: string }[] = [];
+async function pdfText(file: string): Promise<string> {
+  const pdf = await getDocumentProxy(new Uint8Array(fs.readFileSync(file)));
+  const { text } = await extractText(pdf, { mergePages: true });
+  return (Array.isArray(text) ? text.join("\n") : text).replace(/[ \t]+\n/g, "\n").replace(/-\n(?=[a-zäöü])/g, "");
+}
 
-  const flush = async () => {
-    if (!queue.length) return;
+let queue: { doc: string; ord: number; content: string }[] = [];
+let pendingDocs: string[] = [];
+
+async function flush() {
+  if (!queue.length && !pendingDocs.length) return;
+  if (queue.length) {
     const vecs = await embedBatch(queue.map((q) => q.content));
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (let i = 0; i < queue.length; i++) {
-        await client.query(`INSERT INTO chunk(drucksache_id, ord, content, embedding) VALUES ($1,$2,$3,$4::vector)`,
-          [queue[i].id, queue[i].ord, queue[i].content, `[${vecs[i].join(",")}]`]);
-      }
-      await client.query("COMMIT");
-    } catch (e) { await client.query("ROLLBACK"); throw e; } finally { client.release(); }
-    queue = [];
-  };
+    const f32 = new Float32Array(vecs.length * DIM);
+    vecs.forEach((v, i) => f32.set(v, i * DIM));
+    fs.appendFileSync(vecFile, Buffer.from(f32.buffer));
+    fs.appendFileSync(chunksFile, queue.map((q) => JSON.stringify(q)).join("\n") + "\n");
+    manifest.chunks += queue.length;
+  }
+  manifest.docs.push(...pendingDocs);
+  manifest.model = env.embeddingDeployment ?? "";
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  queue = [];
+  pendingDocs = [];
+}
 
-  for await (const line of rl) {
-    if (!line.trim()) continue;
+async function main() {
+  if (!env.embeddingDeployment || !env.endpoint || !env.apiKey) throw new Error("Azure-Variablen fehlen (.env.local).");
+  const done = new Set(manifest.docs);
+  const docs = readMetadata();
+  if (!docs.length) console.warn("Keine Einträge in data/*/metadaten.jsonl gefunden.");
+  let n = 0, skipped = 0;
+
+  for (const d of docs) {
     if (n >= limit) break;
-    const r = JSON.parse(line) as Row;
-    if (!r.text || done.has(r.id)) { skipped++; continue; }
-    if (isReferenceOnly(r.text)) { skipped++; continue; }
-    await pool.query(
-      `INSERT INTO drucksache(id,datum,dokumentnummer,titel,vorgangstyp,kfw,bmz,ez_deskriptor,deskriptoren,sachgebiete,pdf_url,text)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO NOTHING`,
-      [r.id, r.datum || null, r.dokumentnummer, r.titel, r.vorgangstyp, !!r.kfw, !!r.bmz, !!r.ez_deskriptor,
-        r.deskriptoren ?? [], r.sachgebiete ?? [], r.pdf_url, r.text],
-    );
-    // Kontext-Präfix je Chunk verbessert Retrieval
-    const prefix = `${r.dokumentnummer ?? r.id} | ${r.datum ?? ""} | ${r.titel ?? ""} | ${(r.deskriptoren ?? []).join(", ")}\n`;
-    chunk(r.text).forEach((c, ord) => queue.push({ id: r.id, ord, content: prefix + c }));
+    if (done.has(d.id)) { skipped++; continue; }
+    const file = pdfPath(d);
+    if (!fs.existsSync(file)) { console.warn(`PDF fehlt: ${file}`); skipped++; continue; }
+    let text: string;
+    try { text = await pdfText(file); } catch (e) { console.warn(`Lesefehler ${d.datei}: ${(e as Error).message}`); skipped++; continue; }
+    if (text.trim().length < 80 || isReferenceOnly(text)) { console.warn(`übersprungen (leer/Verweis): ${d.datei}`); pendingDocs.push(d.id); skipped++; continue; }
+
+    fs.writeFileSync(textPath(d.id), text);
+    // Kontext-Präfix je Chunk verbessert das Retrieval
+    const prefix = `${d.dokumentnummer} | ${d.datum ?? ""} | ${d.titel} | ${d.deskriptoren.join(", ")}\n`;
+    chunk(text).forEach((c, ord) => queue.push({ doc: d.id, ord, content: prefix + c }));
+    pendingDocs.push(d.id);
     n++;
     if (queue.length >= BATCH) await flush();
-    if (n % 25 === 0) console.log(`${n} Drucksachen verarbeitet (${skipped} übersprungen)`);
+    if (n % 25 === 0) console.log(`${n} PDFs verarbeitet (${skipped} übersprungen)`);
   }
   await flush();
-  console.log(`Fertig: ${n} neu, ${skipped} übersprungen.`);
-  await pool.end();
+  console.log(`Fertig: ${n} neu, ${skipped} übersprungen, ${manifest.chunks} Chunks im Index.`);
 }
 main().catch((e) => { console.error(e); process.exit(1); });
