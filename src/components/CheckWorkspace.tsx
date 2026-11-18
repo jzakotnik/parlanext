@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CheckResponse, Filter, FrageResult } from "@/lib/types";
 import { tokens } from "@/lib/tokens";
 import LiveLog, { type LogLine } from "./LiveLog";
@@ -19,6 +19,9 @@ export default function CheckWorkspace() {
   const [err, setErr] = useState<string | null>(null);
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [newQ, setNewQ] = useState("");
+  // Änderungen an den Suchanfragen starten die Suche erst nach einer Wartezeit; jede weitere Änderung setzt den Zähler zurück
+  const WARTEZEIT = 10;
+  const [pending, setPending] = useState<{ i: number; v: string[]; left: number } | null>(null);
   const [log, setLog] = useState<LogLine[]>([]);
 
   /** Ruft die Prüfung als Stream ab: Fortschrittszeilen laufen live ins Log, am Ende kommt das Ergebnis. */
@@ -51,12 +54,28 @@ export default function CheckWorkspace() {
 
   async function run() {
     if (!text.trim()) return;
+    setPending(null);
     setBusy(true); setErr(null); setPicked({});
     try {
       const res = await call({ text, filter });
       setData(res); setFragen(res.fragen); setSel(0);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); setLog([]); }
   }
+
+  useEffect(() => {
+    if (!pending) return;
+    if (pending.left <= 0) {
+      if (busy) return; // läuft schon eine Suche: danach starten
+      const { i, v } = pending;
+      setPending(null);
+      rerun(i, v);
+      return;
+    }
+    const t = setTimeout(() => setPending((p) => (p ? { ...p, left: p.left - 1 } : p)), 1000);
+    return () => clearTimeout(t);
+  }, [pending, busy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const aendern = (i: number, v: string[]) => setPending({ i, v, left: WARTEZEIT });
 
   async function rerun(i: number, varianten: string[]) {
     const f = fragen[i];
@@ -68,6 +87,7 @@ export default function CheckWorkspace() {
   }
 
   const f = fragen[sel];
+  const varianten = f ? (pending && pending.i === sel ? pending.v : f.varianten) : [];
   const terms = useMemo(() => (f ? tokens(f.text + " " + f.varianten.join(" ")) : []), [f]);
   const nearest = f && f.status === "nichts" ? f.treffer[0] : undefined;
 
@@ -149,15 +169,24 @@ export default function CheckWorkspace() {
               <div className="sect">
                 <h3 style={{ fontSize: 15, marginBottom: 8 }}>Suchanfragen <span className="tag">bearbeitbar</span></h3>
                 <div className="row">
-                  {f.varianten.map((v) => (
+                  {varianten.map((v) => (
                     <span key={v} className="chip">{v}
-                      <button aria-label={`Suchanfrage „${v}“ entfernen`} onClick={() => rerun(sel, f.varianten.filter((x) => x !== v))}>×</button>
+                      <button aria-label={`Suchanfrage „${v}“ entfernen`} onClick={() => aendern(sel, varianten.filter((x) => x !== v))}>×</button>
                     </span>
                   ))}
-                  <form className="addq" onSubmit={(e) => { e.preventDefault(); if (newQ.trim()) { rerun(sel, [...f.varianten, newQ.trim()]); setNewQ(""); } }}>
+                  <form className="addq" onSubmit={(e) => { e.preventDefault(); if (newQ.trim()) { aendern(sel, [...varianten, newQ.trim()]); setNewQ(""); } }}>
                     <input aria-label="Suchanfrage hinzufügen" placeholder="+ Suchanfrage" value={newQ} onChange={(e) => setNewQ(e.target.value)} />
                   </form>
                 </div>
+                {pending && pending.i === sel && (
+                  <div className="pendingbar" role="status" aria-live="polite">
+                    <span>{busy ? "Neue Suche startet, sobald die laufende fertig ist …" : <>Neue Suche startet in <b>{pending.left} s</b> – weitere Änderungen setzen den Zähler zurück.</>}</span>
+                    <span className="spacer" />
+                    <button className="btn" onClick={() => { const { i, v } = pending; setPending(null); rerun(i, v); }} disabled={busy}>Jetzt suchen</button>
+                    <button className="btn ghost" onClick={() => setPending(null)}>Verwerfen</button>
+                    <span className="pb-track" aria-hidden><i style={{ width: `${(pending.left / WARTEZEIT) * 100}%` }} /></span>
+                  </div>
+                )}
               </div>
 
               <div className="verdict">

@@ -156,3 +156,9 @@ mark { background: color-mix(in srgb, #ffd54a 55%, transparent); color: inherit;
 @keyframes blink { 50% { opacity: 0.2; } }
 
 .tag.bezug { background: var(--brand-soft); color: var(--ink); border-color: transparent; font-weight: 600; }
+
+/* Wartezeit vor erneuter Suche */
+.pendingbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 12px; padding: 10px 14px 12px; border-radius: 12px; background: var(--brand-soft); font-size: 14px; overflow: hidden; }
+.pendingbar .btn { padding: 5px 12px; font-size: 13px; }
+.pb-track { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in srgb, var(--brand) 15%, transparent); }
+.pb-track i { display: block; height: 100%; background: var(--brand); transition: width 1s linear; }

@@ -232,6 +232,8 @@ npm run build && npm start   # Produktionsbetrieb
 
 **Live-Ablauf:** Während einer Prüfung zeigt die App neben dem Eingabefeld, was gerade passiert (Anfrage zerlegen, Suchvarianten erzeugen, Index durchsuchen, Treffer bewerten, Zitat verifizieren), samt Zeitstempeln und Warnungen, etwa wenn ein GPT-Aufruf scheitert. Nach der Prüfung verschwindet das Fenster; das bleibende Protokoll steht rechts im Ergebnis. Es zeigt Schritte der App, nicht die internen Gedanken des Modells.
 
+**Suchanfragen bearbeiten:** Im Ergebnis lassen sich die Suchanfragen einer Einzelfrage mit × entfernen oder über „+ Suchanfrage“ ergänzen. Die erneute Suche startet nicht sofort, sondern nach einem sichtbaren Zähler von 10 Sekunden, den jede weitere Änderung zurücksetzt. So lassen sich mehrere Chips hintereinander löschen. „Jetzt suchen“ startet sofort, „Verwerfen“ nimmt die Änderungen zurück.
+
 **Ergebnis lesen:** Der Status steht immer als Text und Symbol, nie nur als Farbe. Die Erklärung „Modus: KI-Bewertung“ oder „ohne KI“ steht im Rechercheprotokoll. Sehen Sie dort „ohne KI“ oder die Markierung „Heuristik“, obwohl `AZURE_CHAT_DEPLOYMENT` gesetzt ist, ist der Chat-Aufruf fehlgeschlagen (z. B. falscher Deployment-Name oder keine Quota).
 
 ![Fundstellen mit Tags, Relevanz und hervorgehobenen Suchbegriffen, daneben das Rechercheprotokoll](assets/screenshot3.png)
