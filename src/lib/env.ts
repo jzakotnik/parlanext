@@ -14,3 +14,16 @@ export const hasChat = () => hasAzure() && Boolean(env.chatDeployment);
 export const hasEmbedding = () => hasAzure() && Boolean(env.embeddingDeployment);
 /** true, sobald ein Suchindex (npm run ingest) vorhanden ist */
 export const hasIndex = () => fs.existsSync(path.join(env.dataDir, "index", "manifest.json"));
+
+const zahl = (name: string, std: number, min = 1, max = 1000) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n >= min ? Math.min(Math.floor(n), max) : std;
+};
+/** Obergrenzen (Anzahl Dokumente); jeweils per Umgebungsvariable änderbar, siehe README */
+export const limits = {
+  proSuche: zahl("CHECK_PRO_SUCHE", 20),      // Treffer je Suchanfrage im Anfragen-Check
+  maxTreffer: zahl("CHECK_MAX_TREFFER", 50),   // Fundstellen je Einzelfrage insgesamt
+  anzeige: zahl("CHECK_ANZEIGE", 20),          // zuerst angezeigt (und Schrittweite von „Weitere anzeigen“)
+  bewertet: zahl("CHECK_BEWERTET", 6, 1, 15),  // so viele Treffer bewertet GPT (kostet Token)
+  sucheMax: zahl("SUCHE_MAX", 100),            // Maximum auf „Antworten durchsuchen“
+};

@@ -82,6 +82,11 @@ Optionale Einstellungen:
 |---|---|
 | `INDEX_TYPEN` | Welche Drucksachentypen indexiert werden. Standard `Antwort`. Beispiel: `Antwort,Kleine Anfrage` |
 | `EMBED_BATCH` | Texte pro Embedding-Anfrage, Standard `32` (bei hoher Quota z. B. `64`, bei knapper `16`) |
+| `CHECK_PRO_SUCHE` | Treffer je Suchanfrage im Anfragen-Check, Standard `20` |
+| `CHECK_MAX_TREFFER` | Fundstellen je Einzelfrage insgesamt, Standard `50` |
+| `CHECK_ANZEIGE` | Zuerst angezeigte Fundstellen und Schrittweite von „Weitere anzeigen“, Standard `20` |
+| `CHECK_BEWERTET` | So viele Treffer bewertet GPT (mehr = mehr Token), Standard `6` |
+| `SUCHE_MAX` | Maximum auf „Antworten durchsuchen“ (Schaltfläche „Mehr laden“ in 20er-Schritten), Standard `100` |
 | `EMBED_MAX_TOKENS` | Geschätzte Obergrenze je Anfrage, Standard `100000` (Azure-Limit: 300.000) |
 
 **Verbindung prüfen** (sollte JSON mit einem `embedding`-Array zurückgeben):
@@ -231,6 +236,8 @@ npm run build && npm start   # Produktionsbetrieb
 *Antworten durchsuchen: Suche über alle indexierten Antworten, filterbar nach Vorgangstyp und Zeitraum, mit Volltext und PDF-Link je Treffer.*
 
 **Live-Ablauf:** Während einer Prüfung zeigt die App neben dem Eingabefeld, was gerade passiert (Anfrage zerlegen, Suchvarianten erzeugen, Index durchsuchen, Treffer bewerten, Zitat verifizieren), samt Zeitstempeln und Warnungen, etwa wenn ein GPT-Aufruf scheitert. Nach der Prüfung verschwindet das Fenster; das bleibende Protokoll steht rechts im Ergebnis. Es zeigt Schritte der App, nicht die internen Gedanken des Modells.
+
+**Wie viele Treffer:** Der Anfragen-Check sammelt je Einzelfrage bis zu 50 Fundstellen (zusammengeführt aus allen Suchvarianten) und zeigt zuerst die besten 20, danach lassen sich weitere in 20er-Schritten oder alle auf einmal einblenden. GPT bewertet davon die besten 6. „Antworten durchsuchen“ zeigt 20 Treffer und lädt mit „Mehr laden“ bis zu 100 nach. Alle Grenzen sind per Umgebungsvariable einstellbar (Tabelle unter Einrichtung).
 
 **Suchanfragen bearbeiten:** Im Ergebnis lassen sich die Suchanfragen einer Einzelfrage mit × entfernen oder über „+ Suchanfrage“ ergänzen. Die erneute Suche startet nicht sofort, sondern nach einem sichtbaren Zähler von 10 Sekunden, den jede weitere Änderung zurücksetzt. So lassen sich mehrere Chips hintereinander löschen. „Jetzt suchen“ startet sofort, „Verwerfen“ nimmt die Änderungen zurück.
 

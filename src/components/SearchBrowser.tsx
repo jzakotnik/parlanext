@@ -9,12 +9,17 @@ export default function SearchBrowser() {
   const [filter, setFilter] = useState<Filter>({});
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [limit, setLimit] = useState(20);
+  const [MAX, setMax] = useState(100);
 
-  async function go(query = q, f = filter) {
+  async function go(query = q, f = filter, lim = 20) {
+    setLimit(lim);
     setBusy(true);
     try {
-      const r = await fetch("/api/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, filter: f, limit: 20 }) });
-      setHits((await r.json()).hits ?? []);
+      const r = await fetch("/api/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, filter: f, limit: lim }) });
+      const j = await r.json();
+      setHits(j.hits ?? []);
+      if (j.max) setMax(j.max);
     } finally { setBusy(false); }
   }
   useEffect(() => { go("", {}); /* neueste Antworten initial */ }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -42,6 +47,12 @@ export default function SearchBrowser() {
       <div className="list" style={{ marginTop: 24 }} aria-live="polite">
         {hits === null && <div className="skeleton" />}
         {hits?.map((h) => <HitCard key={h.id} hit={h} terms={tokens(q)} />)}
+        {hits && hits.length > 0 && (
+          <div className="row" style={{ justifyContent: "space-between", margin: "0 4px" }}>
+            <span style={{ color: "var(--ink-2)", fontSize: 14 }}>{hits.length} Treffer{hits.length >= limit && limit < MAX ? " angezeigt – weitere verfügbar" : ""}</span>
+            {hits.length >= limit && limit < MAX && <button className="btn" disabled={busy} onClick={() => go(q, filter, Math.min(limit + 20, MAX))}>{busy ? "Lade …" : "Mehr laden"}</button>}
+          </div>
+        )}
         {hits?.length === 0 && <div className="card empty">Keine Treffer. Versuchen Sie andere Begriffe oder lockern Sie die Filter.</div>}
       </div>
     </>

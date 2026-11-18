@@ -101,8 +101,9 @@ export async function searchAntworten(query: string, f: Filter = {}, limit = 10)
     terms.forEach((t, j) => { if (lows[i].includes(t)) kw[i] += idf[j]; });
   }
 
+  const depth = Math.max(300, limit * 30); // Kandidaten-Chunks je Liste: Dokumente haben ~30 Chunks, mehrere Treffer je Dokument fallen beim Zusammenfassen weg
   const rank = (score: ArrayLike<number>, min: number) =>
-    [...chunks.keys()].filter((i) => ok[i] && score[i] > min).sort((a, b) => score[b] - score[a]).slice(0, 60);
+    [...chunks.keys()].filter((i) => ok[i] && score[i] > min).sort((a, b) => score[b] - score[a]).slice(0, depth);
   const fused = new Map<number, number>();
   for (const list of [rank(sim, -0.5), rank(kw, 0)]) list.forEach((i, r) => fused.set(i, (fused.get(i) ?? 0) + 1 / (60 + r)));
 

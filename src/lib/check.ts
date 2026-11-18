@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { chatJSON } from "./azure";
-import { hasChat, hasIndex } from "./env";
+import { hasChat, hasIndex, limits } from "./env";
 import { searchAntworten, tokens } from "./search";
 import { SCHWELLE, type CheckResponse, type Emit, type Filter, type FrageResult, type Hit, type Status } from "./types";
 
@@ -81,9 +81,9 @@ Ist der Text nur ein Stichwort oder eine einzelne Frage, gib genau eine Einzelfr
 }
 
 async function bewerteKI(frage: string, treffer: Hit[], emit: Emit, n: number) {
-  emit(`Frage ${n}: GPT bewertet die ${Math.min(4, treffer.length)} besten Treffer und sucht ein wörtliches Zitat …`);
+  emit(`Frage ${n}: GPT bewertet die ${Math.min(limits.bewertet, treffer.length)} besten Treffer und sucht ein wörtliches Zitat …`);
   const quellen = treffer
-    .slice(0, 4)
+    .slice(0, limits.bewertet)
     .map((h, i) => `[${i}] ${h.dokumentnummer} (${h.datum ?? "?"})\n${h.passage}`)
     .join("\n\n---\n\n");
   const raw = await chatJSON<unknown>(
@@ -107,7 +107,7 @@ export async function pruefeFrage(f: FrageInput, idx: number, filter: Filter, em
 
   emit(`Frage ${n}: durchsuche den Index mit ${queries.length} Suchanfragen (Vektor + Stichwort) …`);
   const runs = await mapLimit(queries, 4, async (q) => {
-    const hits = await searchAntworten(q, filter, 8);
+    const hits = await searchAntworten(q, filter, limits.proSuche);
     emit(`Frage ${n} · „${kurz(q, 60)}“ → ${hits.length} Treffer`);
     return hits;
   });
@@ -119,9 +119,9 @@ export async function pruefeFrage(f: FrageInput, idx: number, filter: Filter, em
       if (!cur || h.relevanz > cur.relevanz) byId.set(h.id, h);
     });
   });
-  const treffer = [...byId.values()].sort((a, b) => (score.get(b.id)! - score.get(a.id)!) || b.relevanz - a.relevanz).slice(0, 6);
+  const treffer = [...byId.values()].sort((a, b) => (score.get(b.id)! - score.get(a.id)!) || b.relevanz - a.relevanz).slice(0, limits.maxTreffer);
 
-  emit(`Frage ${n}: ${byId.size} verschiedene Dokumente gefunden, die ${treffer.length} besten werden weiterverarbeitet`);
+  emit(`Frage ${n}: ${byId.size} verschiedene Dokumente gefunden, ${treffer.length} davon werden angezeigt, die ${Math.min(limits.bewertet, treffer.length)} besten bewertet`);
 
   let status: Status = "nichts";
   let begruendung = "";
@@ -169,5 +169,5 @@ export async function pruefe(input: { text?: string; fragen?: FrageInput[]; filt
   const liste = fragen.slice(0, 12);
   const results = await mapLimit(liste, 2, (f) => pruefeFrage(f, liste.indexOf(f), input.filter ?? {}, emit));
   emit("Fertig", "ok");
-  return { fragen: results, modus: { ki: hasChat(), datenbank: hasIndex() }, schwelle: SCHWELLE };
+  return { fragen: results, modus: { ki: hasChat(), datenbank: hasIndex() }, schwelle: SCHWELLE, limits: { anzeige: limits.anzeige, max: limits.maxTreffer } };
 }

@@ -21,6 +21,7 @@ export default function CheckWorkspace() {
   const [newQ, setNewQ] = useState("");
   // Änderungen an den Suchanfragen starten die Suche erst nach einer Wartezeit; jede weitere Änderung setzt den Zähler zurück
   const WARTEZEIT = 10;
+  const [shown, setShown] = useState<Record<string, number>>({}); // sichtbare Fundstellen je Einzelfrage
   const [pending, setPending] = useState<{ i: number; v: string[]; left: number } | null>(null);
   const [log, setLog] = useState<LogLine[]>([]);
 
@@ -54,7 +55,7 @@ export default function CheckWorkspace() {
 
   async function run() {
     if (!text.trim()) return;
-    setPending(null);
+    setPending(null); setShown({});
     setBusy(true); setErr(null); setPicked({});
     try {
       const res = await call({ text, filter });
@@ -87,6 +88,7 @@ export default function CheckWorkspace() {
   }
 
   const f = fragen[sel];
+  const SCHRITT = data?.limits?.anzeige ?? 20;
   const varianten = f ? (pending && pending.i === sel ? pending.v : f.varianten) : [];
   const terms = useMemo(() => (f ? tokens(f.text + " " + f.varianten.join(" ")) : []), [f]);
   const nearest = f && f.status === "nichts" ? f.treffer[0] : undefined;
@@ -207,13 +209,21 @@ export default function CheckWorkspace() {
               </div>
             </div>
 
-            <h2 className="col-title" style={{ marginBottom: 0 }}>Fundstellen · {f.treffer.length}</h2>
+            <h2 className="col-title" style={{ marginBottom: 0 }}>Fundstellen · {f.treffer.length}{f.treffer.length > (shown[f.id] ?? SCHRITT) ? ` (${Math.min(shown[f.id] ?? SCHRITT, f.treffer.length)} angezeigt)` : ""}</h2>
             <div className="list">
               {busy && <div className="skeleton" />}
-              {f.treffer.map((h) => (
+              {f.treffer.slice(0, shown[f.id] ?? SCHRITT).map((h) => (
                 <HitCard key={h.id} hit={h} terms={terms}
                   picked={(picked[f.id] ?? []).includes(h.id)} onPick={() => togglePick(f.id, h.id)} />
               ))}
+              {f.treffer.length > (shown[f.id] ?? SCHRITT) && (
+                <div className="row" style={{ justifyContent: "center", gap: 10 }}>
+                  <button className="btn" onClick={() => setShown((s) => ({ ...s, [f.id]: (s[f.id] ?? SCHRITT) + SCHRITT }))}>
+                    Weitere {Math.min(SCHRITT, f.treffer.length - (shown[f.id] ?? SCHRITT))} anzeigen ({f.treffer.length - (shown[f.id] ?? SCHRITT)} übrig)
+                  </button>
+                  <button className="btn ghost" onClick={() => setShown((s) => ({ ...s, [f.id]: f.treffer.length }))}>Alle anzeigen</button>
+                </div>
+              )}
               {!f.treffer.length && <div className="card empty">Keine Fundstellen mit diesen Suchanfragen und Filtern.</div>}
             </div>
           </main>
