@@ -1,10 +1,10 @@
 /**
  * Daten-Download aus der DIP-API des Bundestags – Anfragen UND Antworten, direkt in den data-Ordner.
  *
- *   npm run fetch -- [--monate 12 | --von 2025-03-25]  [--wahlperiode 21] [--bis 2026-12-31] [--limit 20] [--nur anfragen|antworten]
+ *   npm run fetch -- [--monate 12 | --von 2025-03-25]  [--wahlperiode 21] [--bis 2026-12-31] [--limit 20] [--pause 1000] [--nur anfragen|antworten]
  *
  * Phase 1 (anfragen):  alle Kleinen/Großen Anfragen der Wahlperiode -> data/{kleine,grosse}_anfragen
- * Phase 2 (antworten): zu jeder Anfrage die Antwort-Drucksache(n) über den Vorgang -> selber Ordner
+ * Phase 2 (antworten): alle Antwort-Drucksachen im Zeitraum, über den Vorgang der passenden Anfrage zugeordnet -> selber Ordner
  * Je Drucksache: <id>.pdf + eine Zeile in metadaten.jsonl (DIP-JSON, ergänzt um anfrage_id/anfrage_dokumentnummer).
  * Wiederholbar: vorhandene Einträge/PDFs werden übersprungen. Braucht DIP_API_KEY in .env.local.
  *
@@ -28,16 +28,27 @@ const monateZurueck = (n: number) => { const d = new Date(); d.setMonth(d.getMon
 const von = arg("von") ?? (monate ? monateZurueck(monate) : undefined);
 const bis = arg("bis");
 const nur = arg("nur");
-const CONC = 8;
+const CONC = 1; // bewusst sequentiell: keine parallelen Downloads
+const PAUSE = Number(arg("pause")) || 1000; // mittlere Pause zwischen Abrufen in ms (zufällig 0,5x–1,5x)
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const UA = "parlanext-fetch/0.1 (Recherche-Tool, sequentielle Abfragen)";
+/** Der Server schützt sich teils mit einer Browser-Prüfung ("Enodia"); die umgehen wir nicht, sondern bremsen und brechen sonst ab. */
+const istBotSchutz = (r: Response, body?: string) => (r.headers.get("content-type") ?? "").includes("text/html") && (r.status === 400 || r.status === 403 || r.status === 429 || /Enodia/i.test(body ?? ""));
+
 async function get(url: string, headers: Record<string, string> = {}, attempt = 0): Promise<Response> {
+  if (attempt === 0) await sleep(PAUSE * (0.5 + Math.random())); // Rücksicht auf den Server
   try {
-    const r = await fetch(url, { headers });
+    const r = await fetch(url, { headers: { "User-Agent": UA, ...headers } });
+    if (istBotSchutz(r)) {
+      if (attempt >= 4) throw new Error("Der Server verlangt eine Browser-Prüfung (Bot-Schutz). Bitte später erneut starten (die Läufe sind wiederholbar) oder die Last senken.");
+      await sleep(15000 * (attempt + 1));
+      return get(url, headers, attempt + 1);
+    }
     if ((r.status === 429 || r.status >= 500) && attempt < 5) { await sleep(2 ** attempt * 1000); return get(url, headers, attempt + 1); }
     return r;
   } catch (e) {
-    if (attempt < 5) { await sleep(2 ** attempt * 1000); return get(url, headers, attempt + 1); }
+    if (attempt < 5 && !/Bot-Schutz/.test((e as Error).message)) { await sleep(2 ** attempt * 1000); return get(url, headers, attempt + 1); }
     throw e;
   }
 }
@@ -107,34 +118,47 @@ async function phaseAnfragen() {
 }
 
 async function phaseAntworten() {
-  let verarbeitet = 0;
-  for (const f of folders) {
-    const rows = readRows(f.meta);
-    const have = new Set(rows.map((r) => String(r.id)));
-    const anfragen = rows.filter((r) => /Anfrage/.test(r.drucksachetyp ?? "") && r.vorgangsbezug?.length && !r.anfrage_id);
-    console.log(`${f.dir}: suche Antworten zu ${anfragen.length} Anfragen`);
-    await pool(anfragen, async (a) => {
-      if (verarbeitet >= limit) return;
-      verarbeitet++;
-      try {
-        const found: any[] = [];
-        for (const vb of a.vorgangsbezug) for await (const { docs } of seiten(`/drucksache?f.vorgang=${vb.id}`)) found.push(...docs);
-        found.forEach((d) => (typen[d.drucksachetyp] = (typen[d.drucksachetyp] ?? 0) + 1));
-        const antworten = found.filter((d) => d.drucksachetyp === "Antwort");
-        if (!antworten.length) { stats.ohneAntwort++; return; }
-        for (const d of antworten) {
-          if (have.has(String(d.id)) && fs.existsSync(path.join(f.path, `${d.id}.pdf`))) continue;
-          if (!(await ladePdf(d, f.path))) continue;
-          if (!have.has(String(d.id))) {
-            have.add(String(d.id));
-            fs.appendFileSync(f.meta, JSON.stringify({ ...d, anfrage_id: a.id, anfrage_dokumentnummer: a.dokumentnummer, vorgangstyp: f.typ }) + "\n");
-          }
-          stats.antwortenNeu++;
-        }
-      } catch (e) { stats.fehler++; console.warn((e as Error).message); }
-      if (verarbeitet % 50 === 0) console.log(`  ${verarbeitet} Anfragen geprüft, ${stats.antwortenNeu} Antworten geladen, ${stats.ohneAntwort} ohne Antwort`);
-    });
+  const antwortTyp = arg("antwort-typ") ?? "Antwort";
+  // Vorgang-ID -> Anfrage (aus den lokalen Metadaten)
+  const byVorgang = new Map<string, { a: any; f: (typeof folders)[number] }>();
+  const have = new Set<string>();
+  for (const f of folders) for (const r of readRows(f.meta)) {
+    have.add(String(r.id));
+    if (/Anfrage/.test(r.drucksachetyp ?? "") && !r.anfrage_id) for (const vb of r.vorgangsbezug ?? []) byVorgang.set(String(vb.id), { a: r, f });
   }
+  const q = `/drucksache?f.drucksachetyp=${encodeURIComponent(antwortTyp)}&f.wahlperiode=${wp}&f.zuordnung=BT` +
+    (von ? `&f.datum.start=${von}` : "") + (bis ? `&f.datum.end=${bis}` : "");
+  let n = 0;
+  const zugeordnet = new Set<string>();
+  for await (const { docs, numFound } of seiten(q)) {
+    if (n === 0) {
+      console.log(`${antwortTyp}: ${numFound ?? "?"} laut DIP (WP ${wp})`);
+      if (!numFound && !docs.length) console.warn(`Keine Drucksachen vom Typ "${antwortTyp}" gefunden – anderen Wert mit --antwort-typ probieren.`);
+    }
+    n += docs.length;
+    await pool(docs, async (d) => {
+      if (stats.antwortenNeu >= limit) return;
+      try {
+        const vbs: any[] = d.vorgangsbezug ?? [];
+        vbs.forEach((vb) => typen[vb.vorgangstyp] = (typen[vb.vorgangstyp] ?? 0) + 1);
+        const match = vbs.map((vb) => byVorgang.get(String(vb.id))).find(Boolean);
+        const istAnfrage = vbs.some((vb) => /Anfrage/.test(vb.vorgangstyp ?? ""));
+        if (!match && !istAnfrage) return; // z. B. Antworten auf andere Vorgangstypen
+        const f = match?.f ?? (vbs.some((vb) => /Große/.test(vb.vorgangstyp ?? "")) ? folders[1] : folders[0]);
+        if (have.has(String(d.id)) && fs.existsSync(path.join(f.path, `${d.id}.pdf`))) { if (match) zugeordnet.add(String(match.a.id)); return; }
+        if (!(await ladePdf(d, f.path))) return;
+        if (!have.has(String(d.id))) {
+          have.add(String(d.id));
+          fs.appendFileSync(f.meta, JSON.stringify({ ...d, ...(match ? { anfrage_id: match.a.id, anfrage_dokumentnummer: match.a.dokumentnummer } : {}), vorgangstyp: f.typ }) + "\n");
+        }
+        if (match) zugeordnet.add(String(match.a.id));
+        stats.antwortenNeu++;
+      } catch (e) { stats.fehler++; console.warn((e as Error).message); }
+    });
+    console.log(`  ${n} Antworten gesehen, ${stats.antwortenNeu} neu geladen`);
+    if (stats.antwortenNeu >= limit) break;
+  }
+  if (limit === Infinity) stats.ohneAntwort = [...byVorgang.values()].filter((x, i, arr) => arr.findIndex((y) => y.a.id === x.a.id) === i && !zugeordnet.has(String(x.a.id))).length;
 }
 
 async function main() {
@@ -143,7 +167,7 @@ async function main() {
   if (nur !== "anfragen") await phaseAntworten();
   console.log("Fertig:", stats);
   if (stats.pdf404) console.log(`${stats.pdf404} PDFs sind beim Bundestag (noch) nicht abrufbar (404) – meist ganz neue Drucksachen. Beim nächsten Lauf wird es erneut versucht.`);
-  if (Object.keys(typen).length) console.log('Drucksachentypen in den Vorgängen (hier sollte "Antwort" vorkommen):', typen);
+  if (Object.keys(typen).length) console.log('Vorgangstypen der geladenen Antworten:', typen);
   console.log("Nächster Schritt: npm run ingest -- --limit 50");
 }
 main().catch((e) => { console.error(e); process.exit(1); });
