@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
 import { extractText, getDocumentProxy } from "unpdf";
-import { FOLDERS, indexDir, pdfPath, readMetadata, safeId, textPath } from "../src/lib/store";
+import { FOLDERS, INDEX_TYPEN, indexDir, pdfPath, readMetadata, safeId, textPath } from "../src/lib/store";
 import { env } from "../src/lib/env";
 
 const limit = Number(process.argv[process.argv.indexOf("--limit") + 1]) || Infinity;
@@ -108,7 +108,10 @@ async function flush() {
 async function main() {
   if (!env.embeddingDeployment || !env.endpoint || !env.apiKey) throw new Error("Azure-Variablen fehlen (.env.local).");
   const done = new Set(manifest.docs);
-  const docs = readMetadata();
+  const alle = readMetadata();
+  const docs = alle.filter((d) => INDEX_TYPEN.includes(d.drucksachetyp));
+  console.log(`${docs.length} von ${alle.length} Metadatenzeilen haben Typ ${INDEX_TYPEN.join("/")} (übrige werden nicht indexiert).`);
+  if (!docs.length) console.warn("Keine Antworten gefunden – zuerst npm run fetch-antworten ausführen.");
   if (!docs.length) console.warn("Keine Einträge in data/*/metadaten.jsonl gefunden.");
   let n = 0, skipped = 0;
 

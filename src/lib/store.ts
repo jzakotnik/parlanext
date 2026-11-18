@@ -7,12 +7,16 @@ export const FOLDERS = [
   { dir: "grosse_anfragen", typ: "Große Anfrage" },
 ] as const;
 
+/** Welche Drucksachentypen indexiert werden (Standard: nur Antworten der Bundesregierung). */
+export const INDEX_TYPEN = (process.env.INDEX_TYPEN ?? "Antwort").split(",").map((t) => t.trim());
+
 export type Doc = {
   id: string;
   dokumentnummer: string;
   datum: string | null;
   titel: string;
   vorgangstyp: string;
+  drucksachetyp: string; // "Antwort", "Kleine Anfrage", …
   kfw: boolean;
   bmz: boolean;
   deskriptoren: string[];
@@ -55,6 +59,7 @@ export function readMetadata(): Doc[] {
         datum: r.datum ? String(r.datum).slice(0, 10) : null,
         titel: r.titel ?? String(nr),
         vorgangstyp: r.vorgangsbezug?.[0]?.vorgangstyp ?? r.vorgangstyp ?? r.drucksachetyp ?? typ,
+        drucksachetyp: r.drucksachetyp ?? "",
         quelle_url: r.fundstelle?.pdf_url ?? r.pdf_url ?? null,
         urheber: r.urheber?.[0]?.titel ?? null,
         kfw: !!r.kfw,
