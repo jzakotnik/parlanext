@@ -1,7 +1,7 @@
 /**
  * Daten-Download aus der DIP-API des Bundestags – Anfragen UND Antworten, direkt in den data-Ordner.
  *
- *   npm run fetch -- [--monate 12 | --von 2025-03-25]  [--wahlperiode 21] [--bis 2026-12-31] [--limit 20] [--pause 1000] [--nur anfragen|antworten]
+ *   npm run fetch -- [--monate 12 | --von 2025-03-25]  [--wahlperiode 21] [--bis 2026-12-31] [--limit 20] [--pause 400] [--nur anfragen|antworten]
  *
  * Phase 1 (anfragen):  alle Kleinen/Großen Anfragen der Wahlperiode -> data/{kleine,grosse}_anfragen
  * Phase 2 (antworten): alle Antwort-Drucksachen im Zeitraum, über den Vorgang der passenden Anfrage zugeordnet -> selber Ordner
@@ -29,7 +29,7 @@ const von = arg("von") ?? (monate ? monateZurueck(monate) : undefined);
 const bis = arg("bis");
 const nur = arg("nur");
 const CONC = 1; // bewusst sequentiell: keine parallelen Downloads
-const PAUSE = Number(arg("pause")) || 1000; // mittlere Pause zwischen Abrufen in ms (zufällig 0,5x–1,5x)
+const PAUSE = Number(arg("pause")) || 400; // mittlere Pause zwischen Abrufen in ms (zufällig 0,5x–1,5x)
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const UA = "parlanext-fetch/0.1 (Recherche-Tool, sequentielle Abfragen)";
