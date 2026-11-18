@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { env } from "@/lib/env";
-import { FOLDERS, indexDir, pdfPath, readMetadata } from "@/lib/store";
+import { FOLDERS, INDEX_TYPEN, indexDir, pdfPath, readMetadata } from "@/lib/store";
 import { fmtDate } from "@/components/ui";
 
 export const metadata = { title: "Index-Status – Anfragen-Check" };
@@ -11,7 +11,8 @@ type Manifest = { dim: number; model: string; chunks: number; docs: string[]; en
 export default function Page() {
   const mf = path.join(indexDir(), "manifest.json");
   const m: Manifest | null = fs.existsSync(mf) ? JSON.parse(fs.readFileSync(mf, "utf8")) : null;
-  const meta = readMetadata();
+  const alleMeta = readMetadata();
+  const meta = alleMeta.filter((d) => INDEX_TYPEN.includes(d.drucksachetyp));
   const indexed = new Set(m?.docs ?? []);
 
   // Chunks je Dokument + Abgleich: stammt alles im Index aus den eigenen Ordnern?
@@ -57,7 +58,8 @@ export default function Page() {
             <p style={{ color: "var(--ink-2)", fontSize: 14 }}>Der Embeddings-Dienst speichert keine Daten; Vektoren liegen nur lokal. Modell und Dimension sind festgeschrieben – ein Wechsel erfordert einen neuen Index.</p>
           </div>
           <div className="card panel">
-            <h2>Dokumente</h2>
+            <h2>Dokumente ({INDEX_TYPEN.join(", ")})</h2>
+            <Row k="Weitere Metadatenzeilen (nicht indexiert)" v={alleMeta.length - meta.length} />
             {FOLDERS.map((f) => (
               <Row key={f.dir} k={f.typ + "n"} v={`${meta.filter((d) => d.folder === f.dir && indexed.has(d.id)).length} von ${meta.filter((d) => d.folder === f.dir).length} indexiert`} />
             ))}

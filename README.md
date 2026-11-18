@@ -11,26 +11,26 @@ npm run dev
 ```
 Ohne Index zeigt die App fiktive Demodaten; ohne Azure-Keys wird heuristisch statt per KI bewertet.
 
-## Daten
+## Daten holen (Anfragen + Antworten direkt vom Bundestag)
 ```bash
-npm run data:init    # legt data/ an (falls nicht vorhanden)
+cp .env.example .env.local    # DIP_API_KEY eintragen (dip.bundestag.de > Über DIP > Hilfe > API)
+npm run fetch -- --limit 20   # erst klein testen und die Zusammenfassung lesen
+npm run fetch                 # dann komplett (Wahlperiode 21; Optionen: --wahlperiode, --von, --bis, --nur anfragen|antworten)
 ```
+Das Tool legt `data/` selbst an, lädt alle Kleinen/Großen Anfragen der Wahlperiode und dazu die Antwort-Drucksachen der Bundesregierung (PDF + `metadaten.jsonl`) und ist wiederholbar. Filter- und Feldnamen der DIP-API sind nicht gegen die Swagger-Doku verifiziert – die Zusammenfassung am Ende zeigt, ob „Antwort“ gefunden wurde.
+
 ```
 data/
-  kleine_anfragen/   *.pdf  + metadaten.jsonl
-  grosse_anfragen/   *.pdf  + metadaten.jsonl
-  index/             (wird erzeugt) texts/, chunks.jsonl, vectors.f32, manifest.json
+  kleine_anfragen/   <id>.pdf  + metadaten.jsonl   (Anfragen und Antworten)
+  grosse_anfragen/   <id>.pdf  + metadaten.jsonl
+  index/             (wird erzeugt) texts/, chunks.jsonl, vectors.f32, manifest.json, flags.json
 ```
-`metadaten.jsonl`: eine Zeile je PDF, z. B.
-```json
-{"datei":"20-1234.pdf","dokumentnummer":"20/1234","datum":"2024-03-01","titel":"…","kfw":true,"bmz":true,"deskriptoren":["…"],"sachgebiete":["…"]}
-```
-`vorgangstyp` ergibt sich aus dem Ordner; `id` ist optional (Standard: `dokumentnummer`); fehlt `datei`, wird `<dokumentnummer mit - statt />.pdf` angenommen.
+`metadaten.jsonl` ist das DIP-JSON je Drucksache (`id`, `drucksachetyp`, `dokumentnummer`, `datum`, `titel`, `vorgangsbezug`, `fundstelle.pdf_url` …). Indexiert werden standardmäßig nur Drucksachen vom Typ „Antwort“ (`INDEX_TYPEN` ändert das). KfW-/BMZ-Bezug wird beim Ingest aus dem Volltext abgeleitet. Ordner ohne Download anlegen: `npm run data:init`.
 
 ## Index bauen
 ```bash
 cp .env.example .env.local   # Azure-Endpoint, Key, Deployment-Namen
-npm run ingest -- --limit 50 # erst klein testen, dann ohne --limit
+npm run ingest -- --limit 50 # erst klein testen (Azure-Werte in .env.local), dann ohne --limit
 ```
 Resumable (bereits indexierte PDFs werden übersprungen). Embedding-Modell/Dimension stehen im Manifest; ein Modellwechsel erfordert einen neuen Index (`data/index` löschen).
 
