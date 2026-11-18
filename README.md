@@ -228,7 +228,7 @@ npm run build && npm start   # Produktionsbetrieb
 
 ## So funktioniert es
 
-1. **Zerlegen:** GPT zerlegt die Anfrage in Einzelfragen, Entitäten (Länder, Programme, Institutionen, Zeiträume) und mehrere deutsche Suchvarianten.
+1. **Zerlegen:** GPT zerlegt die Anfrage in Einzelfragen, Entitäten (Länder, Programme, Institutionen, Zeiträume) und **zehn** deutsche Suchvarianten (Fachbegriffe der Entwicklungszusammenarbeit, Synonyme, Abkürzungen, Stichwort- und Oberbegriffsfassungen).
 2. **Suchen:** Jede Variante läuft als **Hybridsuche**: Vektorähnlichkeit (Azure-Embeddings) plus Stichwortsuche, zusammengeführt per Reciprocal Rank Fusion, mit den Filtern (KfW, BMZ, Datum, Vorgangstyp). Der Index liegt im Speicher, die Suche braucht keine Datenbank.
 3. **Bewerten:** GPT bewertet die besten Treffer pro Einzelfrage.
 4. **Belegen:** Ein Urteil gilt nur, wenn das genannte **Zitat wörtlich im Dokument steht**. Lässt es sich nicht verifizieren, wird kein Urteil ausgegeben.
