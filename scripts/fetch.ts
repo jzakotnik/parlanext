@@ -60,22 +60,23 @@ async function pool<T>(items: T[], fn: (x: T) => Promise<void>) {
   await Promise.all(Array.from({ length: CONC }, async () => { while (i < items.length) await fn(items[i++]); }));
 }
 
+const stats = { anfragenNeu: 0, antwortenNeu: 0, ohneAntwort: 0, fehler: 0, pdf404: 0 };
 const folders = FOLDERS.map((f) => ({ ...f, path: path.join(env.dataDir, f.dir), meta: path.join(env.dataDir, f.dir, "metadaten.jsonl") }));
 for (const f of folders) { fs.mkdirSync(f.path, { recursive: true }); if (!fs.existsSync(f.meta)) fs.writeFileSync(f.meta, ""); }
 const readRows = (file: string) => fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 
+/** true = PDF vorhanden; false = nicht verfügbar (404 = beim Bundestag noch nicht abrufbar, wird beim nächsten Lauf erneut versucht) */
 async function ladePdf(d: any, folder: string): Promise<boolean> {
   const pdfFile = path.join(folder, `${d.id}.pdf`);
   if (fs.existsSync(pdfFile)) return true;
   const url = d.fundstelle?.pdf_url;
   if (!url) return false;
   const r = await get(url);
-  if (!r.ok) { console.warn(`PDF ${r.status}: ${url}`); return false; }
+  if (!r.ok) { if (r.status === 404) stats.pdf404++; else console.warn(`PDF ${r.status}: ${url}`); return false; }
   fs.writeFileSync(pdfFile, Buffer.from(await r.arrayBuffer()));
   return true;
 }
 
-const stats = { anfragenNeu: 0, antwortenNeu: 0, ohneAntwort: 0, fehler: 0 };
 const typen: Record<string, number> = {};
 
 async function phaseAnfragen() {
@@ -87,15 +88,16 @@ async function phaseAnfragen() {
     let n = 0;
     for await (const { docs, numFound } of seiten(q)) {
       if (n === 0) console.log(`${f.typ}: ${numFound ?? "?"} laut DIP (WP ${wp})`);
-      const neu = docs.filter((d) => !have.has(String(d.id))).slice(0, Math.max(0, limit - gesamt));
+      const neu = docs.filter((d) => !have.has(String(d.id)));
       await pool(neu, async (d) => {
+        if (stats.anfragenNeu >= limit) return;
         try {
-          if (!(await ladePdf(d, f.path))) { stats.fehler++; return; }
+          if (!(await ladePdf(d, f.path))) return; // PDF (noch) nicht abrufbar: nicht in die Metadaten aufnehmen, nächster Lauf versucht es erneut
           fs.appendFileSync(f.meta, JSON.stringify(d) + "\n");
           have.add(String(d.id)); stats.anfragenNeu++;
         } catch (e) { stats.fehler++; console.warn((e as Error).message); }
       });
-      gesamt += neu.length; n += docs.length;
+      gesamt = stats.anfragenNeu; n += docs.length;
       console.log(`  ${f.dir}: ${n} Seiten-Einträge gesehen, ${stats.anfragenNeu} neu geladen`);
       if (gesamt >= limit) return;
     }
@@ -120,7 +122,7 @@ async function phaseAntworten() {
         if (!antworten.length) { stats.ohneAntwort++; return; }
         for (const d of antworten) {
           if (have.has(String(d.id)) && fs.existsSync(path.join(f.path, `${d.id}.pdf`))) continue;
-          if (!(await ladePdf(d, f.path))) { stats.fehler++; continue; }
+          if (!(await ladePdf(d, f.path))) continue;
           if (!have.has(String(d.id))) {
             have.add(String(d.id));
             fs.appendFileSync(f.meta, JSON.stringify({ ...d, anfrage_id: a.id, anfrage_dokumentnummer: a.dokumentnummer, vorgangstyp: f.typ }) + "\n");
@@ -137,6 +139,7 @@ async function main() {
   if (nur !== "antworten") await phaseAnfragen();
   if (nur !== "anfragen") await phaseAntworten();
   console.log("Fertig:", stats);
+  if (stats.pdf404) console.log(`${stats.pdf404} PDFs sind beim Bundestag (noch) nicht abrufbar (404) – meist ganz neue Drucksachen. Beim nächsten Lauf wird es erneut versucht.`);
   if (Object.keys(typen).length) console.log('Drucksachentypen in den Vorgängen (hier sollte "Antwort" vorkommen):', typen);
   console.log("Nächster Schritt: npm run ingest -- --limit 50");
 }
