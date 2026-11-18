@@ -332,9 +332,11 @@ src/
 scripts/
 ├── fetch.ts                      DIP-Download (Anfragen und Antworten)
 ├── tags.ts                       Tags neu berechnen (ohne Embeddings)
+├── make-icons.py                 Favicons und App-Icons aus assets/icon-source.webp erzeugen (Pillow, numpy)
 ├── ingest.ts                     PDF → Text → Chunks → Embeddings → Index
 └── init-data.mjs                 Datenordner anlegen
 config/tags.json                  Tag-Definitionen
+assets/icon-source.webp           Quelle für Favicons/App-Icons (neu erzeugen: python3 scripts/make-icons.py)
 ```
 
 ---
