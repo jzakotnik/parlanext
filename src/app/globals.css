@@ -130,3 +130,23 @@ mark { background: color-mix(in srgb, #ffd54a 55%, transparent); color: inherit;
 .empty { text-align: center; color: var(--ink-3); padding: 48px 20px; }
 .fulltext { white-space: pre-wrap; font-family: var(--serif); font-size: 17px; line-height: 1.7; padding: 28px 32px; max-width: 860px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* Live-Ablauf */
+.composer-row { margin-top: 24px; display: grid; gap: 16px; }
+.composer-row .composer { margin-top: 0; }
+.composer-row.live { grid-template-columns: minmax(0, 1fr) 400px; align-items: stretch; }
+@media (max-width: 980px) { .composer-row.live { grid-template-columns: 1fr; } }
+.livelog { display: flex; flex-direction: column; min-height: 240px; max-height: 340px; overflow: hidden; }
+.livelog-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px; border-bottom: 1px solid var(--line); }
+.livelog-head h2 { font-family: var(--sans); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); }
+.pulse.on { background: var(--brand); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 50%, transparent); } 50% { box-shadow: 0 0 0 7px transparent; } }
+.livelog-body { padding: 10px 14px 14px; overflow-y: auto; font-size: 13px; display: grid; gap: 6px; align-content: start; }
+.livelog-wait { color: var(--ink-3); margin: 6px 4px; }
+.ll { display: grid; grid-template-columns: 46px 14px 1fr; gap: 6px; line-height: 1.4; color: var(--ink-2); animation: fade 0.25s ease both; }
+.ll-t { color: var(--ink-3); font-variant-numeric: tabular-nums; text-align: right; }
+.ll.ok { color: var(--ok); }
+.ll.warn { color: var(--part); }
+.ll.active .ll-m::after { content: " ▍"; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.2; } }

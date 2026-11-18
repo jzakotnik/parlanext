@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import type { CheckResponse, Filter, FrageResult } from "@/lib/types";
 import { tokens } from "@/lib/tokens";
+import LiveLog, { type LogLine } from "./LiveLog";
 import { HitCard, StatusBadge, fmtDate, pct } from "./ui";
 
 const BEISPIEL = `1. Wie hoch waren die Neuzusagen der KfW Entwicklungsbank für erneuerbare Energien in Subsahara-Afrika in den Jahren 2020 bis 2024?
@@ -18,11 +19,34 @@ export default function CheckWorkspace() {
   const [err, setErr] = useState<string | null>(null);
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [newQ, setNewQ] = useState("");
+  const [log, setLog] = useState<LogLine[]>([]);
 
+  /** Ruft die Prüfung als Stream ab: Fortschrittszeilen laufen live ins Log, am Ende kommt das Ergebnis. */
   async function call(body: unknown): Promise<CheckResponse> {
-    const r = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error("Die Prüfung ist fehlgeschlagen. Bitte erneut versuchen.");
-    return r.json();
+    const t0 = Date.now();
+    setLog([]);
+    const r = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(body as object), stream: true }) });
+    if (!r.ok || !r.body) throw new Error("Die Prüfung ist fehlgeschlagen. Bitte erneut versuchen.");
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let result: CheckResponse | null = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (value) buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = done ? "" : lines.pop() ?? "";
+      for (const l of lines) {
+        if (!l.trim()) continue;
+        const ev = JSON.parse(l);
+        if (ev.type === "log") setLog((cur) => [...cur, { t: Date.now() - t0, msg: ev.msg, level: ev.level }]);
+        else if (ev.type === "result") result = ev.data;
+        else if (ev.type === "error") throw new Error("Die Prüfung ist fehlgeschlagen. Bitte erneut versuchen.");
+      }
+      if (done) break;
+    }
+    if (!result) throw new Error("Die Prüfung wurde unvollständig beendet. Bitte erneut versuchen.");
+    return result;
   }
 
   async function run() {
@@ -31,7 +55,7 @@ export default function CheckWorkspace() {
     try {
       const res = await call({ text, filter });
       setData(res); setFragen(res.fragen); setSel(0);
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); setLog([]); }
   }
 
   async function rerun(i: number, varianten: string[]) {
@@ -40,7 +64,7 @@ export default function CheckWorkspace() {
     try {
       const res = await call({ fragen: [{ text: f.text, entitaeten: f.entitaeten, varianten }], filter });
       setFragen((cur) => cur.map((x, j) => (j === i ? { ...res.fragen[0], id: x.id } : x)));
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); setLog([]); }
   }
 
   const f = fragen[sel];
@@ -80,6 +104,7 @@ export default function CheckWorkspace() {
         <p>Fügen Sie eine ganze Kleine oder Große Anfrage, eine einzelne Frage oder nur Stichworte ein. Wir durchsuchen die Antworten der Bundesregierung – und belegen jedes Ergebnis mit Zitat, Datum und Quelle.</p>
       </section>
 
+      <div className={`composer-row ${busy ? "live" : ""}`}>
       <div className="card composer">
         <label className="sr" htmlFor="anfrage">Anfrage, Frage oder Stichworte</label>
         <textarea id="anfrage" value={text} onChange={(e) => setText(e.target.value)}
@@ -94,9 +119,10 @@ export default function CheckWorkspace() {
           <button className="btn primary" onClick={run} disabled={busy || !text.trim()}>{busy ? "Prüfe …" : "Prüfen"} <span aria-hidden>→</span></button>
         </div>
       </div>
+      {busy && <LiveLog lines={log} busy={busy} />}
+      </div>
 
       {err && <div className="banner" role="alert" style={{ marginTop: 16 }}>{err}</div>}
-      {busy && !fragen.length && <div className="stack" style={{ marginTop: 28 }}><div className="skeleton" /><div className="skeleton" /></div>}
 
       {data && f && (
         <div className="workspace">

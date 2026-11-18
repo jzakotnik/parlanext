@@ -222,6 +222,8 @@ npm run build && npm start   # Produktionsbetrieb
 | `/antwort/<id>` | Volltext einer Antwort, Link zur PDF und zum Original beim Bundestag |
 | `/index-status` – **Index** | Modell, Dimension, Azure-Host, Chunks, Abgleich mit `metadaten.jsonl` |
 
+**Live-Ablauf:** Während einer Prüfung zeigt die App neben dem Eingabefeld, was gerade passiert (Anfrage zerlegen, Suchvarianten erzeugen, Index durchsuchen, Treffer bewerten, Zitat verifizieren), samt Zeitstempeln und Warnungen, etwa wenn ein GPT-Aufruf scheitert. Nach der Prüfung verschwindet das Fenster; das bleibende Protokoll steht rechts im Ergebnis. Es zeigt Schritte der App, nicht die internen Gedanken des Modells.
+
 **Ergebnis lesen:** Der Status steht immer als Text und Symbol, nie nur als Farbe. Die Erklärung „Modus: KI-Bewertung“ oder „ohne KI“ steht im Rechercheprotokoll. Sehen Sie dort „ohne KI“ oder die Markierung „Heuristik“, obwohl `AZURE_CHAT_DEPLOYMENT` gesetzt ist, ist der Chat-Aufruf fehlgeschlagen (z. B. falscher Deployment-Name oder keine Quota).
 
 ---
