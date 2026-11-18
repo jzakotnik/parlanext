@@ -28,7 +28,7 @@ export type Doc = {
 
 export type Chunk = { doc: string; ord: number; content: string };
 
-type Store = { docs: Map<string, Doc>; chunks: Chunk[]; vectors: Float32Array; dim: number; mtime: number };
+type Store = { docs: Map<string, Doc>; chunks: Chunk[]; vectors: Float32Array; dim: number; mtime: number; lows?: string[] };
 const g = globalThis as unknown as { __store?: Store };
 
 export const indexDir = () => path.join(env.dataDir, "index");

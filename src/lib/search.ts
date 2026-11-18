@@ -88,7 +88,8 @@ export async function searchAntworten(query: string, f: Filter = {}, limit = 10)
 
   // 2) Stichwort: IDF-gewichtete Präfix-Treffer (grober Ersatz für Stemming/Dekomposition)
   const terms = [...new Set(tokens(query).map(stem))];
-  const lows = chunks.map((c) => c.content.toLowerCase());
+  // Kleingeschriebene Texte einmal pro geladenem Index vorhalten (nicht je Suchanfrage neu erzeugen: spart Speicher und Zeit)
+  const lows = (store.lows ??= chunks.map((c) => c.content.toLowerCase()));
   const idf = terms.map((t) => {
     let n = 0;
     for (let i = 0; i < lows.length; i++) if (ok[i] && lows[i].includes(t)) n++;
