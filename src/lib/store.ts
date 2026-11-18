@@ -3,8 +3,8 @@ import path from "node:path";
 import { env } from "./env";
 
 export const FOLDERS = [
-  { dir: "kleine-anfragen", typ: "Kleine Anfrage" },
-  { dir: "grosse-anfragen", typ: "Große Anfrage" },
+  { dir: "kleine_anfragen", typ: "Kleine Anfrage" },
+  { dir: "grosse_anfragen", typ: "Große Anfrage" },
 ] as const;
 
 export type Doc = {
