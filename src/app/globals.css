@@ -36,20 +36,20 @@ button, input, textarea, select { font: inherit; color: inherit; }
 :focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 55%, transparent); outline-offset: 2px; border-radius: 8px; }
 
 .wrap { max-width: 1280px; margin: 0 auto; padding: 0 24px 80px; }
-.nav { display: flex; align-items: center; gap: 24px; padding: 20px 0; }
+.nav { display: flex; align-items: center; gap: 24px; padding: 14px 0 10px; }
 .logo { font-family: var(--serif); font-size: 22px; font-weight: 700; text-decoration: none; display: flex; align-items: center; gap: 10px; }
-.logo i { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, var(--brand), #5ad1a8); display: grid; place-items: center; color: var(--brand-ink); font-style: normal; font-size: 16px; }
+.logo img { width: 36px; height: 36px; border-radius: 9px; box-shadow: 0 2px 8px -2px rgba(6, 34, 84, 0.45); display: block; }
 .nav nav { display: flex; gap: 4px; margin-left: auto; background: var(--surface); border: 1px solid var(--line); padding: 4px; border-radius: 999px; box-shadow: var(--shadow); }
 .nav nav a { text-decoration: none; padding: 8px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; color: var(--ink-2); }
 .nav nav a[aria-current="page"] { background: var(--brand); color: var(--brand-ink); }
 
 .banner { background: var(--part-bg); color: var(--part); border-radius: 12px; padding: 10px 16px; font-size: 13px; display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
-.hero { padding: 28px 0 8px; }
-.hero h1 { font-size: clamp(32px, 4.5vw, 52px); line-height: 1.08; max-width: 820px; }
-.hero p { color: var(--ink-2); font-size: 18px; max-width: 700px; margin: 14px 0 0; }
+.hero { padding: 6px 0 0; }
+.hero h1 { font-size: clamp(24px, 3vw, 32px); line-height: 1.15; max-width: 820px; }
+.hero p { color: var(--ink-2); font-size: 15px; max-width: 700px; margin: 6px 0 0; }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
-.composer { margin-top: 24px; padding: 8px; }
+.composer { margin-top: 16px; padding: 8px; }
 .composer textarea { width: 100%; min-height: 140px; border: 0; background: transparent; resize: vertical; padding: 16px 18px; font-size: 16px; line-height: 1.55; }
 .composer textarea:focus-visible { outline: none; }
 .composer .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 10px 10px; border-top: 1px dashed var(--line); }
@@ -132,7 +132,7 @@ mark { background: color-mix(in srgb, #ffd54a 55%, transparent); color: inherit;
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
 /* Live-Ablauf */
-.composer-row { margin-top: 24px; display: grid; gap: 16px; }
+.composer-row { margin-top: 16px; display: grid; gap: 16px; }
 .composer-row .composer { margin-top: 0; }
 .composer-row.live { grid-template-columns: minmax(0, 1fr) 400px; align-items: stretch; }
 @media (max-width: 980px) { .composer-row.live { grid-template-columns: 1fr; } }
