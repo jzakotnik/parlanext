@@ -25,10 +25,11 @@ Anfragen-Check durchsucht die Antworten der Bundesregierung auf Kleine und Groß
 5. [Die App benutzen](#die-app-benutzen)
 6. [So funktioniert es](#so-funktioniert-es)
 7. [Tags konfigurieren](#tags-konfigurieren)
-8. [Kosten und Laufzeit](#kosten-und-laufzeit)
-9. [Fehlerbehebung](#fehlerbehebung)
-10. [Projektstruktur](#projektstruktur)
-11. [Grenzen und offene Punkte](#grenzen-und-offene-punkte)
+8. [Nutzungsprotokoll](#nutzungsprotokoll)
+9. [Kosten und Laufzeit](#kosten-und-laufzeit)
+10. [Fehlerbehebung](#fehlerbehebung)
+11. [Projektstruktur](#projektstruktur)
+12. [Grenzen und offene Punkte](#grenzen-und-offene-punkte)
 
 ---
 
@@ -290,6 +291,41 @@ Das Skript zeigt am Ende je Tag die Zahl der getaggten Dokumente, dieselbe Zahl 
 
 ---
 
+## Nutzungsprotokoll
+
+Die App protokolliert, wann sie benutzt wird und welche Fragen gestellt werden. Jedes Ereignis ist eine JSON-Zeile, auf der Konsole (bei pm2: `pm2 logs parlanext`) und in der Datei `data/logs/nutzung.jsonl`:
+
+| Ereignis | Wann | Inhalt |
+|---|---|---|
+| `check_start` | Prüfung gestartet | Text der Anfrage, Länge, Filter |
+| `check_fertig` | Prüfung beendet | Dauer, Status je Einzelfrage (beantwortet/teilweise/nichts), Trefferzahl, Dokumentnummer des Belegs |
+| `check_fehler` | Prüfung fehlgeschlagen | Dauer, Fehlermeldung |
+| `check_neusuche` | Suchanfragen einer Einzelfrage bearbeitet | Frage, Zahl der Varianten |
+| `suche` | Suche auf „Antworten durchsuchen“ | Suchbegriff, Filter, Trefferzahl |
+| `pdf` | PDF geöffnet | Dokument-ID und -Nummer |
+
+Beispiel: `[nutzung] {"t":"2026-11-18T14:52:37Z","event":"check_start","ip":"193.30.140.0","text":"Wie hoch waren die Zusagen …"}`
+
+Ansehen und auswerten:
+
+```bash
+pm2 logs parlanext --lines 100 | grep nutzung           # live
+grep '"event":"check_start"' data/logs/nutzung.jsonl | jq -r '[.t, .ip, .text] | @tsv'   # alle gestellten Fragen
+```
+
+Einstellungen in `.env.local`:
+
+| Variable | Bedeutung |
+|---|---|
+| `USAGE_LOG` | `on` (Standard) oder `off` |
+| `USAGE_LOG_IP` | `anon` (Standard: letztes IPv4-Oktett bzw. Rest der IPv6-Adresse maskiert), `full` oder `off` |
+
+Die IP-Adresse stammt aus `X-Forwarded-For` bzw. `X-Real-IP` (die mitgelieferte Nginx-Konfiguration setzt beides). Ohne Reverse Proxy ist sie leer. Ein Seitenaufruf ohne Suche wird nicht protokolliert, nur die genannten Aktionen. Die Datei wächst unbegrenzt, rotieren Sie sie bei Bedarf (z. B. mit `logrotate`).
+
+**Datenschutz:** Die Fragen stehen im Klartext im Log. Informieren Sie die Nutzer darüber und geben Sie die Datei nicht weiter. Mit `USAGE_LOG=off` ist das Protokoll aus.
+
+---
+
 ## Kosten und Laufzeit
 
 Richtwerte, keine Zusagen. Preise und Quoten hängen von Ihrer Azure-Resource ab.
@@ -317,6 +353,7 @@ Richtwerte, keine Zusagen. Preise und Quoten hängen von Ihrer Azure-Resource ab
 | `Keine Antworten gefunden` | In `metadaten.jsonl` steht kein `"drucksachetyp":"Antwort"`. Zuerst `npm run fetch` ausführen oder `INDEX_TYPEN` anpassen |
 | App zeigt „Demo-Modus“ | Es gibt noch keinen Index (`data/index/manifest.json`). Zuerst `npm run ingest` |
 | Prüfung zeigt „Heuristik“/„ohne KI“ | Chat-Deployment fehlt oder der Aufruf scheitert. `AZURE_CHAT_DEPLOYMENT` und Quota prüfen |
+| „Die Verbindung zum Server wurde vor dem Ergebnis unterbrochen“ | Der Stream wurde abgeschnitten, ohne dass ein Fehler gemeldet wurde. Prüfen: `pm2 status` (Spalte ↺ = Neustarts, z. B. wegen `max_memory_restart`; ein Index mit 60.000 Chunks braucht rund 0,5–1 GB), `sudo tail /var/log/nginx/error.log` (`upstream timed out` oder `prematurely closed`) und im Nginx-Block für `/api/check` `proxy_buffering off` sowie `proxy_read_timeout 300s`. Die App sendet alle 8 s einen Ping, damit Proxys die Verbindung nicht wegen Stille trennen |
 | Index soll neu aufgebaut werden | `data/index` löschen und `npm run ingest` erneut ausführen |
 
 ---
