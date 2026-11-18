@@ -1,44 +1,315 @@
 # Anfragen-Check
 
-Web-App, die prüft, ob eine (neue) parlamentarische Anfrage schon einmal von der Bundesregierung beantwortet wurde – Korpus: Antworten auf Kleine/Große Anfragen mit Bezug zur KfW Entwicklungsbank.
+**Wurde diese parlamentarische Anfrage schon einmal beantwortet?**
 
-**Stack:** Next.js 15 · Azure (Foundry): `text-embedding-3-large` (1536 Dim.) + GPT-6 Astra · **keine Datenbank** – PDFs, Metadaten und Suchindex liegen als Dateien im gitignorierten Ordner `data/`.
+Anfragen-Check durchsucht die Antworten der Bundesregierung auf Kleine und Große Anfragen des Deutschen Bundestags (Fokus: KfW Entwicklungsbank / BMZ) und beantwortet die Frage mit **wörtlichem Zitat, Datum und PDF-Link** – oder sagt ehrlich, dass nichts gefunden wurde.
 
-## Start (Demo-Modus)
+- **Anfragen-Check:** Eine ganze Anfrage, eine Einzelfrage oder nur Stichworte einfügen. Die App zerlegt sie in Einzelfragen, sucht je Frage mit mehreren Suchvarianten und bewertet: *beantwortet*, *teilweise* oder *nichts gefunden*.
+- **Antworten durchsuchen:** Semantische Suche plus Stichwortsuche mit Filtern (KfW, BMZ, Vorgangstyp, Zeitraum).
+- **Index-Status:** Zeigt, was im Suchindex liegt und ob alles zu Ihren eigenen Dokumenten passt.
+- **Recherchevermerk:** Export je Prüfung mit Status, Zitaten und gewählten Fundstellen.
+
+**Technik:** Next.js 15 (App Router, TypeScript) · Azure (Foundry) für Embeddings (`text-embedding-3-large`, 1536 Dimensionen) und das Chat-Modell (GPT-6 Astra) · **keine Datenbank**: PDFs, Metadaten und der Suchindex liegen als Dateien im Ordner `data/` (nicht im Git).
+
+---
+
+## Inhalt
+
+1. [Schnellstart](#schnellstart)
+2. [Einrichtung](#einrichtung)
+3. [Daten laden und Index bauen](#daten-laden-und-index-bauen)
+4. [Neue Dokumente hinzufügen](#neue-dokumente-hinzufügen)
+5. [Die App benutzen](#die-app-benutzen)
+6. [So funktioniert es](#so-funktioniert-es)
+7. [Kosten und Laufzeit](#kosten-und-laufzeit)
+8. [Fehlerbehebung](#fehlerbehebung)
+9. [Projektstruktur](#projektstruktur)
+10. [Grenzen und offene Punkte](#grenzen-und-offene-punkte)
+
+---
+
+## Schnellstart
+
+**Voraussetzungen:** Node.js 20.6 oder neuer, ein Azure-(Foundry-)Zugang mit einem Embedding-Deployment (und optional einem Chat-Deployment) sowie ein Schlüssel für die DIP-API des Bundestags.
+
+### Variante A – nur ansehen (Demo-Modus, ohne Konto)
+
 ```bash
+git clone https://github.com/jzakotnik/parlanext.git
+cd parlanext
 npm install
 npm run dev
 ```
-Ohne Index zeigt die App fiktive Demodaten; ohne Azure-Keys wird heuristisch statt per KI bewertet.
 
-## Daten holen (Anfragen + Antworten direkt vom Bundestag)
+Öffnen Sie <http://localhost:3000>. Ohne Index erscheint ein Hinweis „Demo-Modus“, und die App zeigt sechs **fiktive** Beispielantworten. Ohne Azure-Schlüssel bewertet sie nur heuristisch (nie „beantwortet“).
+
+### Variante B – mit echten Daten
+
 ```bash
-cp .env.example .env.local    # DIP_API_KEY eintragen (dip.bundestag.de > Über DIP > Hilfe > API)
-npm run fetch -- --limit 20   # erst klein testen und die Zusammenfassung lesen
-npm run fetch -- --monate 12  # sequentiell mit zufälliger Pause (--pause ms, Standard 1000); letzte 12 Monate (alternativ --von/--bis; mehr holen = größerer Wert, bereits Vorhandenes wird übersprungen)
-npm run fetch                 # komplette Wahlperiode 21 (weitere Optionen: --wahlperiode, --nur anfragen|antworten)
+npm install
+cp .env.example .env.local          # 1. Zugangsdaten eintragen (siehe unten)
+npm run fetch -- --monate 1 --limit 20   # 2. kleiner Download zum Testen
+npm run ingest -- --limit 20             # 3. kleiner Index zum Testen
+npm run dev                              # 4. App starten
 ```
-Das Tool legt `data/` selbst an, lädt alle Kleinen/Großen Anfragen der Wahlperiode und dazu die Antwort-Drucksachen der Bundesregierung (PDF + `metadaten.jsonl`) und ist wiederholbar. Filter- und Feldnamen der DIP-API sind nicht gegen die Swagger-Doku verifiziert – die Zusammenfassung am Ende zeigt, ob „Antwort“ gefunden wurde.
+
+Prüfen Sie dann unter **Index** (`/index-status`), ob alles stimmt. Danach laden Sie den gewünschten Zeitraum komplett (`npm run fetch -- --monate 12`) und bauen den vollständigen Index (`npm run ingest`).
+
+---
+
+## Einrichtung
+
+Kopieren Sie `.env.example` nach `.env.local` und tragen Sie die Werte ein. Die Datei steht in `.gitignore`, Schlüssel gelangen nie ins Repository und nie in den Browser.
+
+| Variable | Bedeutung |
+|---|---|
+| `AZURE_OPENAI_ENDPOINT` | Endpunkt Ihrer Azure-Resource **mit** `/openai/v1` am Ende, z. B. `https://<resource>.services.ai.azure.com/openai/v1` |
+| `AZURE_OPENAI_API_KEY` | Schlüssel der Resource (Foundry-Portal → Keys und Endpoint) |
+| `AZURE_EMBEDDING_DEPLOYMENT` | **Name** Ihres Embedding-Deployments (nicht der Modellname), z. B. `text-embedding-3-large` |
+| `AZURE_CHAT_DEPLOYMENT` | Name Ihres Chat-Deployments (GPT-6 Astra). Ohne ihn bewertet die App nur heuristisch |
+| `EMBEDDING_DIMENSIONS` | Standard `1536`. Muss beim Indexieren und Suchen gleich sein |
+| `DATA_DIR` | Datenordner, Standard `./data` |
+| `DIP_API_KEY` | Schlüssel für die DIP-API: dip.bundestag.de → *Über DIP* → *Hilfe* → *API* |
+
+Optionale Einstellungen:
+
+| Variable | Bedeutung |
+|---|---|
+| `INDEX_TYPEN` | Welche Drucksachentypen indexiert werden. Standard `Antwort`. Beispiel: `Antwort,Kleine Anfrage` |
+| `EMBED_BATCH` | Texte pro Embedding-Anfrage, Standard `32` (bei hoher Quota z. B. `64`, bei knapper `16`) |
+| `EMBED_MAX_TOKENS` | Geschätzte Obergrenze je Anfrage, Standard `100000` (Azure-Limit: 300.000) |
+
+**Verbindung prüfen** (sollte JSON mit einem `embedding`-Array zurückgeben):
+
+```bash
+set -a; source .env.local; set +a
+curl -s "$AZURE_OPENAI_ENDPOINT/embeddings" \
+  -H "api-key: $AZURE_OPENAI_API_KEY" -H "Content-Type: application/json" \
+  -d "{\"model\":\"$AZURE_EMBEDDING_DEPLOYMENT\",\"input\":\"Test\",\"dimensions\":1536}" | head -c 300
+```
+
+---
+
+## Daten laden und Index bauen
+
+Alles liegt im Ordner `data/` (wird von den Werkzeugen selbst angelegt, `npm run data:init` legt ihn auch ohne Download an):
 
 ```
 data/
-  kleine_anfragen/   <id>.pdf  + metadaten.jsonl   (Anfragen und Antworten)
-  grosse_anfragen/   <id>.pdf  + metadaten.jsonl
-  index/             (wird erzeugt) texts/, chunks.jsonl, vectors.f32, manifest.json, flags.json
+├── kleine_anfragen/
+│   ├── metadaten.jsonl      ← eine Zeile je Drucksache (Anfragen UND Antworten)
+│   ├── 291982.pdf           ← Dateiname = Feld "id" der Zeile
+│   └── …
+├── grosse_anfragen/
+│   ├── metadaten.jsonl
+│   └── …
+└── index/                   ← wird von „ingest“ erzeugt
+    ├── texts/<id>.txt       ← extrahierter Volltext
+    ├── chunks.jsonl         ← Textabschnitte
+    ├── vectors.f32          ← Embedding-Vektoren
+    ├── flags.json           ← KfW-/BMZ-Kennzeichen je Dokument (aus dem Volltext)
+    └── manifest.json        ← Modell, Dimension, indexierte Dokumente
 ```
-`metadaten.jsonl` ist das DIP-JSON je Drucksache (`id`, `drucksachetyp`, `dokumentnummer`, `datum`, `titel`, `vorgangsbezug`, `fundstelle.pdf_url` …). Indexiert werden standardmäßig nur Drucksachen vom Typ „Antwort“ (`INDEX_TYPEN` ändert das). KfW-/BMZ-Bezug wird beim Ingest aus dem Volltext abgeleitet. Ordner ohne Download anlegen: `npm run data:init`.
 
-## Index bauen
+### Schritt 1: Download vom Bundestag (`npm run fetch`)
+
+Lädt Kleine und Große Anfragen einer Wahlperiode **und** die zugehörigen Antworten der Bundesregierung (PDF + Metadaten) direkt in `data/`.
+
 ```bash
-cp .env.example .env.local   # Azure-Endpoint, Key, Deployment-Namen
-npm run ingest -- --limit 50 # erst klein testen (Azure-Werte in .env.local), dann ohne --limit
+npm run fetch -- --monate 12        # letzte 12 Monate
+npm run fetch -- --von 2025-03-25   # ab einem Datum
+npm run fetch                       # komplette Wahlperiode 21
 ```
-Resumable (bereits indexierte PDFs werden übersprungen). Embedding-Modell/Dimension stehen im Manifest; ein Modellwechsel erfordert einen neuen Index (`data/index` löschen).
 
-## Funktionsweise
-- Suche: Vektor (Azure-Embeddings, Kosinus im Speicher) + Stichwortsuche, per Reciprocal Rank Fusion; Filter KfW/BMZ/Datum/Vorgangstyp. Bis ~100k Chunks ist das ohne Vektordatenbank schnell genug.
-- Vertrauensregeln: Urteil nur mit **wörtlich verifiziertem Zitat** + Datum + PDF-Link; bei „nichts gefunden“ werden Suchanfragen/Filter und der nächste Treffer unter der Schwelle (0,55) gezeigt; Antworten > 12 Monate sind markiert.
-- Die PDFs werden über `/api/pdf/<id>` aus `data/` ausgeliefert. Keys bleiben serverseitig.
+| Option | Bedeutung |
+|---|---|
+| `--monate N` | Zeitraum: die letzten N Monate |
+| `--von JJJJ-MM-TT`, `--bis JJJJ-MM-TT` | Zeitraum nach Datum der Drucksache |
+| `--wahlperiode N` | Wahlperiode, Standard `21` |
+| `--limit N` | Nur N Drucksachen laden (zum Testen!) |
+| `--nur anfragen` / `--nur antworten` | Nur eine der beiden Phasen ausführen |
+| `--pause MS` | Mittlere Pause zwischen Abrufen, Standard `400` (zufällig 0,5×–1,5×) |
+| `--antwort-typ NAME` | Falls DIP den Typ „Antwort“ anders benennt |
 
-## Offen
-DIP-Feldnamen gegen Swagger prüfen, Chat-Agent mit Tools `search_antworten`/`get_antwort`, Evaluationsset, Entra-Auth, Dekomposition deutscher Komposita.
+Eigenschaften:
+
+- **Sequentiell und höflich:** keine parallelen Abrufe, zufällige Pausen, ehrlicher User-Agent. Bei der Browser-Prüfung des Servers („Bot-Schutz“) wartet das Tool und bricht nach vier Versuchen ab. Die Prüfung wird nicht umgangen.
+- **Wiederholbar:** Vorhandenes wird übersprungen, ein Abbruch kostet nichts. Erst `--monate 1`, später `--monate 12` ist problemlos möglich.
+- **404 bei PDFs:** Ganz neue Drucksachen sind beim Bundestag oft noch nicht abrufbar. Sie werden übersprungen und beim nächsten Lauf erneut versucht.
+- **Dauer:** rund 4.000 PDFs für 12 Monate brauchen gut eine Stunde.
+
+### Schritt 2: Index bauen (`npm run ingest`)
+
+Liest die PDFs, extrahiert den Text, zerlegt ihn in Abschnitte (je Frage-Antwort-Paar), holt die Embeddings von Azure und speichert alles in `data/index/`.
+
+```bash
+npm run ingest -- --limit 50   # erst klein testen
+npm run ingest                 # dann alles
+```
+
+- Es werden **nur Drucksachen vom Typ „Antwort“** indexiert (`INDEX_TYPEN` ändert das). Die Anfragen selbst bleiben unindexiert.
+- **Wiederholbar:** Bereits indexierte Dokumente werden übersprungen. Nach einem Abbruch macht der Lauf dort weiter.
+- **Rate-Limits:** Bei HTTP 429 wartet das Tool selbst (Retry-After, adaptive Drosselung).
+- **KfW-/BMZ-Kennzeichen** werden beim Ingest aus dem Volltext abgeleitet („KfW“, „Kreditanstalt für Wiederaufbau“, „Entwicklungsbank“ bzw. „BMZ“, „Bundesministerium für wirtschaftliche Zusammenarbeit“). Das sind Hinweise, bitte stichprobenartig prüfen.
+- Ein Modell- oder Dimensionswechsel erfordert einen neuen Index (`data/index` löschen). Das Tool verweigert sonst das Weiterschreiben.
+
+---
+
+## Neue Dokumente hinzufügen
+
+### Weg 1: Neue Drucksachen automatisch nachladen (empfohlen)
+
+Regelmäßig, z. B. wöchentlich:
+
+```bash
+npm run fetch -- --monate 1    # holt alles Neue der letzten Zeit, Bekanntes wird übersprungen
+npm run ingest                 # indexiert nur die neuen Antworten
+```
+
+Nach dem Ingest ist alles sofort durchsuchbar (die App erkennt den neuen Index ohne Neustart). Möchten Sie **mehr Zeitraum** abdecken, erhöhen Sie `--monate` (z. B. 24) oder setzen `--von` früher. Für ältere Wahlperioden zusätzlich `--wahlperiode 20`.
+
+### Weg 2: Eigene PDFs manuell hinzufügen
+
+1. **PDF ablegen** in `data/kleine_anfragen/` oder `data/grosse_anfragen/`. Der Ordner bestimmt den Vorgangstyp.
+2. **Eine Zeile an `metadaten.jsonl` anhängen** (eine Zeile, gültiges JSON). Mindestens:
+
+   ```json
+   {"id":"12345","drucksachetyp":"Antwort","dokumentnummer":"21/9999","datum":"2026-11-01","titel":"Titel der Antwort"}
+   ```
+
+   Die PDF muss `12345.pdf` heißen (Dateiname = `id`). Alternativ geben Sie den Dateinamen mit `"datei":"meine-datei.pdf"` an.
+
+   Weitere sinnvolle Felder:
+
+   | Feld | Bedeutung |
+   |---|---|
+   | `drucksachetyp` | **Muss `"Antwort"` sein** (oder zu `INDEX_TYPEN` passen), sonst wird die Zeile nicht indexiert |
+   | `dokumentnummer` | Anzeige, z. B. `21/9999` |
+   | `datum` | `JJJJ-MM-TT`, für Filter und die „älter als 12 Monate“-Markierung |
+   | `titel` | Anzeige und Kontext für die Suche |
+   | `deskriptoren`, `sachgebiete` | Listen, verbessern die Suche |
+   | `fundstelle.pdf_url` | Link zum Original beim Bundestag |
+   | `kfw`, `bmz` | Optional. Fehlen sie, werden sie aus dem Text abgeleitet |
+
+3. **Indexieren:**
+
+   ```bash
+   npm run ingest
+   ```
+
+   Danach prüfen Sie unter `/index-status`, dass das Dokument indexiert und die PDF vorhanden ist.
+
+### Wichtig zu wissen
+
+- **Bestehende Metadaten werden nicht aktualisiert.** Der Download hängt nur neue Zeilen an. Ändert der Bundestag später Metadaten, bleibt Ihre Zeile auf dem alten Stand.
+- **Ein einzelnes Dokument neu indexieren** wird nicht direkt unterstützt. Soll sich z. B. der Text ändern, löschen Sie `data/index` und bauen den Index neu. Das kostet bei 12 Monaten grob ein paar Dollar Embedding-Kosten (siehe unten).
+- **Dokumente entfernen:** Zeile aus `metadaten.jsonl` löschen (die App zeigt sie dann nicht mehr) und für einen sauberen Index `data/index` neu bauen.
+- **Gescannte PDFs ohne Textebene** werden übersprungen („leer/Verweis“). Dafür bräuchte es OCR.
+
+---
+
+## Die App benutzen
+
+```bash
+npm run dev            # Entwicklung, http://localhost:3000
+npm run build && npm start   # Produktionsbetrieb
+```
+
+| Seite | Zweck |
+|---|---|
+| `/` – **Anfragen-Check** | Anfrage oder Stichworte einfügen → **Prüfen**. Links die Einzelfragen mit Status, in der Mitte Suchanfragen (bearbeitbar), Urteil mit Zitat und Fundstellen, rechts Rechercheprotokoll und Export |
+| `/stoebern` – **Antworten durchsuchen** | Freie Suche mit Filtern für KfW, BMZ, Vorgangstyp, Zeitraum |
+| `/antwort/<id>` | Volltext einer Antwort, Link zur PDF und zum Original beim Bundestag |
+| `/index-status` – **Index** | Modell, Dimension, Azure-Host, Chunks, Abgleich mit `metadaten.jsonl` |
+
+**Ergebnis lesen:** Der Status steht immer als Text und Symbol, nie nur als Farbe. Die Erklärung „Modus: KI-Bewertung“ oder „ohne KI“ steht im Rechercheprotokoll. Sehen Sie dort „ohne KI“ oder die Markierung „Heuristik“, obwohl `AZURE_CHAT_DEPLOYMENT` gesetzt ist, ist der Chat-Aufruf fehlgeschlagen (z. B. falscher Deployment-Name oder keine Quota).
+
+---
+
+## So funktioniert es
+
+1. **Zerlegen:** GPT zerlegt die Anfrage in Einzelfragen, Entitäten (Länder, Programme, Institutionen, Zeiträume) und mehrere deutsche Suchvarianten.
+2. **Suchen:** Jede Variante läuft als **Hybridsuche**: Vektorähnlichkeit (Azure-Embeddings) plus Stichwortsuche, zusammengeführt per Reciprocal Rank Fusion, mit den Filtern (KfW, BMZ, Datum, Vorgangstyp). Der Index liegt im Speicher, die Suche braucht keine Datenbank.
+3. **Bewerten:** GPT bewertet die besten Treffer pro Einzelfrage.
+4. **Belegen:** Ein Urteil gilt nur, wenn das genannte **Zitat wörtlich im Dokument steht**. Lässt es sich nicht verifizieren, wird kein Urteil ausgegeben.
+
+**Vertrauensregeln**
+
+- Urteil nur mit wörtlichem Zitat, Datum und PDF-Link.
+- Bei „nichts gefunden“ zeigt die App die verwendeten Suchanfragen und Filter und den nächsten Treffer unter der Relevanzschwelle (0,55).
+- Antworten, die älter als 12 Monate sind, werden markiert.
+- Ohne Chat-Modell gibt es nur eine Hinweis-Einstufung („teilweise“) und nie „beantwortet“.
+
+---
+
+## Kosten und Laufzeit
+
+Richtwerte, keine Zusagen. Preise und Quoten hängen von Ihrer Azure-Resource ab.
+
+- **Chunks:** etwa 30 je Antwort. 2.000 Antworten ergeben grob 60.000 Chunks mit je rund 300 Token, insgesamt etwa 19 Mio. Token.
+- **Embedding-Kosten:** Beim Listenpreis von etwa 0,13 US-Dollar je 1 Mio. Token sind das einige Dollar für den ganzen Index. Die tatsächlichen Kosten sehen Sie in Azure Cost Management.
+- **Laufzeit:** begrenzt durch die Token-pro-Minute-Quota Ihres Deployments. Bei 120.000 TPM rechnen Sie mit mehreren Stunden, bei einigen 100.000 TPM mit unter einer Stunde.
+- **Speicher:** Die Vektoren liegen im Arbeitsspeicher, 60.000 Chunks brauchen etwa 370 MB.
+- **Laufender Betrieb:** Eine Prüfung kostet einige Embedding-Aufrufe (Bruchteile eines Cents) plus Chat-Token für Zerlegung und Bewertung.
+
+---
+
+## Fehlerbehebung
+
+| Symptom | Ursache und Lösung |
+|---|---|
+| `404` bei der Embedding-Abfrage | Der Endpunkt braucht `/openai/v1` am Ende, oder der Deployment-Name stimmt nicht |
+| `401` | API-Key falsch |
+| **429** beim Ingest | Rate-Limit des Deployments. Das Tool wartet selbst. Bei Dauerproblemen `EMBED_BATCH` verringern oder die Quota (Tokens pro Minute) im Foundry-Portal erhöhen. Der Lauf ist wiederholbar |
+| `maximum request size is 300000 tokens per request` | Veralteter Stand. `git pull` und neu starten. Aktuell wird in Scheiben unter `EMBED_MAX_TOKENS` gesendet |
+| `Warning: TT: undefined function` | Harmlose Meldung der PDF-Bibliothek zu bestimmten Schriften. Der Text wird trotzdem gelesen |
+| „Bot-Schutz des Servers aktiv“ beim Download | Der Bundestag-Server verlangt eine Browser-Prüfung. Warten Sie (z. B. 30–60 Minuten), erhöhen Sie `--pause`, und starten Sie neu. Das Tool setzt dort fort |
+| Viele `PDF 404` | Ganz neue Drucksachen sind noch nicht abrufbar, beim nächsten Lauf erneut versuchen. Bleiben auch ältere aus, prüfen Sie eine URL im Browser |
+| „PDF fehlt“ im Ingest oder Index-Status | Dateiname passt nicht zu `id` bzw. `datei` in der Metadatenzeile |
+| `Keine Antworten gefunden` | In `metadaten.jsonl` steht kein `"drucksachetyp":"Antwort"`. Zuerst `npm run fetch` ausführen oder `INDEX_TYPEN` anpassen |
+| App zeigt „Demo-Modus“ | Es gibt noch keinen Index (`data/index/manifest.json`). Zuerst `npm run ingest` |
+| Prüfung zeigt „Heuristik“/„ohne KI“ | Chat-Deployment fehlt oder der Aufruf scheitert. `AZURE_CHAT_DEPLOYMENT` und Quota prüfen |
+| Index soll neu aufgebaut werden | `data/index` löschen und `npm run ingest` erneut ausführen |
+
+---
+
+## Projektstruktur
+
+```
+src/
+├── app/
+│   ├── page.tsx                  Anfragen-Check
+│   ├── stoebern/                 Suche mit Filtern
+│   ├── antwort/[id]/             Volltext einer Antwort
+│   ├── index-status/             Index-Auswertung
+│   └── api/{check,search,pdf}/   Server-Endpunkte (Schlüssel bleiben serverseitig)
+├── components/                   Oberfläche (Arbeitsbereich, Trefferkarten, Navigation)
+└── lib/
+    ├── check.ts                  Zerlegen → Suchen → Bewerten → Zitat verifizieren
+    ├── search.ts                 Hybridsuche (Vektor + Stichwort, RRF)
+    ├── store.ts                  Laden von Metadaten und Index aus data/
+    ├── azure.ts                  Azure-Client (Embeddings, Chat)
+    └── demo-data.ts              Fiktive Demodaten
+scripts/
+├── fetch.ts                      DIP-Download (Anfragen und Antworten)
+├── ingest.ts                     PDF → Text → Chunks → Embeddings → Index
+└── init-data.mjs                 Datenordner anlegen
+```
+
+---
+
+## Grenzen und offene Punkte
+
+- **Die Metadaten der DIP-API sind nicht gegen die offizielle Swagger-Doku verifiziert.** Filter- und Feldnamen wurden aus dem beobachteten Verhalten abgeleitet. Bei Änderungen der API muss `scripts/fetch.ts` angepasst werden.
+- KfW-/BMZ-Kennzeichen sind eine Textheuristik, kein offizielles Merkmal.
+- Deutsche Komposita werden bei der Stichwortsuche nur grob (Präfixe) behandelt.
+- Noch nicht umgesetzt: Chat-Agent mit Werkzeugen (`search_antworten`, `get_antwort`), Evaluationsset mit bekannten Fragen, Anmeldung per Entra ID, OCR für gescannte PDFs.
+- Das Suchverfahren hält den Index im Arbeitsspeicher. Für deutlich mehr als etwa 100.000 Chunks lohnt eine Vektordatenbank.
+
+---
+
+## Datenschutz
+
+- Die Korpus-PDFs sind öffentliche Bundestagsdrucksachen. Neu eingefügte Anfragen und Suchtexte werden an Ihre Azure-Resource gesendet.
+- Der Embeddings-Dienst speichert keine Daten. Der Index liegt ausschließlich lokal in `data/` (gitignored).
+- API-Schlüssel gehören nur in `.env.local`, nicht ins Repository.
