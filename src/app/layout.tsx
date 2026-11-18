@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import { hasIndex } from "@/lib/env";
@@ -6,6 +6,12 @@ import { hasIndex } from "@/lib/env";
 export const metadata: Metadata = {
   title: "Anfragen-Check – Parlamentarische Anfragen zur KfW Entwicklungsbank",
   description: "Prüfen, ob eine parlamentarische Anfrage bereits von der Bundesregierung beantwortet wurde.",
+};
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#eef2fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#062254" },
+  ],
 };
 export const dynamic = "force-dynamic";
 
