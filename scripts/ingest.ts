@@ -18,8 +18,8 @@ import { env } from "../src/lib/env";
 
 const limit = Number(process.argv[process.argv.indexOf("--limit") + 1]) || Infinity;
 const DIM = env.dimensions;
-const BATCH = 64;
-const ai = new OpenAI({ baseURL: env.endpoint, apiKey: env.apiKey });
+const BATCH = Number(process.env.EMBED_BATCH) || 32; // kleiner = weniger Token pro Anfrage (bei knapper Quota verringern)
+const ai = new OpenAI({ baseURL: env.endpoint, apiKey: env.apiKey, maxRetries: 0 });
 
 const idx = indexDir();
 fs.mkdirSync(path.join(idx, "texts"), { recursive: true });
@@ -55,15 +55,23 @@ function chunk(text: string): string[] {
 
 const isReferenceOnly = (t: string) => t.length < 600 && /siehe (die )?antwort|verweis/i.test(t);
 
+// Adaptive Drosselung: nach einem 429 wird zwischen den Batches gewartet, bei Erfolg langsam wieder schneller.
+let delay = 0;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function embedBatch(inputs: string[], attempt = 0): Promise<number[][]> {
+  if (delay) await sleep(delay);
   try {
     const r = await ai.embeddings.create({ model: env.embeddingDeployment!, input: inputs, dimensions: DIM });
+    delay = Math.max(0, delay - 250);
     return r.data.map((d) => d.embedding);
   } catch (e: any) {
-    if (e?.status === 429 && attempt < 6) {
-      const wait = 2 ** attempt * 1500;
-      console.warn(`429 – warte ${wait} ms`);
-      await new Promise((r) => setTimeout(r, wait));
+    if (e?.status === 429 && attempt < 12) {
+      const retryAfter = Number(e?.headers?.get?.("retry-after")) * 1000 || 0;
+      const wait = Math.min(60000, Math.max(retryAfter, 2 ** attempt * 1500));
+      delay = Math.min(10000, Math.max(delay, 1000) * 1.5);
+      console.warn(`429 (Rate-Limit) – warte ${Math.round(wait / 1000)} s; Pause zwischen Batches jetzt ${Math.round(delay / 1000)} s`);
+      await sleep(wait);
       return embedBatch(inputs, attempt + 1);
     }
     throw e;
