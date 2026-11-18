@@ -1,7 +1,7 @@
 /**
  * Daten-Download aus der DIP-API des Bundestags – Anfragen UND Antworten, direkt in den data-Ordner.
  *
- *   npm run fetch -- [--wahlperiode 21] [--von 2025-03-25] [--bis 2026-12-31] [--limit 20] [--nur anfragen|antworten]
+ *   npm run fetch -- [--monate 12 | --von 2025-03-25]  [--wahlperiode 21] [--bis 2026-12-31] [--limit 20] [--nur anfragen|antworten]
  *
  * Phase 1 (anfragen):  alle Kleinen/Großen Anfragen der Wahlperiode -> data/{kleine,grosse}_anfragen
  * Phase 2 (antworten): zu jeder Anfrage die Antwort-Drucksache(n) über den Vorgang -> selber Ordner
@@ -23,7 +23,9 @@ if (!KEY) throw new Error("DIP_API_KEY fehlt (.env.local). Key: dip.bundestag.de
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : undefined; };
 const limit = Number(arg("limit")) || Infinity;
 const wp = arg("wahlperiode") ?? "21";
-const von = arg("von");
+const monate = Number(arg("monate")) || undefined;
+const monateZurueck = (n: number) => { const d = new Date(); d.setMonth(d.getMonth() - n); return d.toISOString().slice(0, 10); };
+const von = arg("von") ?? (monate ? monateZurueck(monate) : undefined);
 const bis = arg("bis");
 const nur = arg("nur");
 const CONC = 8;
@@ -136,6 +138,7 @@ async function phaseAntworten() {
 }
 
 async function main() {
+  if (von || bis) console.log(`Zeitraum: ${von ?? "Beginn"} bis ${bis ?? "heute"}`);
   if (nur !== "antworten") await phaseAnfragen();
   if (nur !== "anfragen") await phaseAntworten();
   console.log("Fertig:", stats);

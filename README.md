@@ -15,7 +15,8 @@ Ohne Index zeigt die App fiktive Demodaten; ohne Azure-Keys wird heuristisch sta
 ```bash
 cp .env.example .env.local    # DIP_API_KEY eintragen (dip.bundestag.de > Über DIP > Hilfe > API)
 npm run fetch -- --limit 20   # erst klein testen und die Zusammenfassung lesen
-npm run fetch                 # dann komplett (Wahlperiode 21; Optionen: --wahlperiode, --von, --bis, --nur anfragen|antworten)
+npm run fetch -- --monate 12  # letzte 12 Monate (alternativ --von/--bis; mehr holen = größerer Wert, bereits Vorhandenes wird übersprungen)
+npm run fetch                 # komplette Wahlperiode 21 (weitere Optionen: --wahlperiode, --nur anfragen|antworten)
 ```
 Das Tool legt `data/` selbst an, lädt alle Kleinen/Großen Anfragen der Wahlperiode und dazu die Antwort-Drucksachen der Bundesregierung (PDF + `metadaten.jsonl`) und ist wiederholbar. Filter- und Feldnamen der DIP-API sind nicht gegen die Swagger-Doku verifiziert – die Zusammenfassung am Ende zeigt, ob „Antwort“ gefunden wurde.
 
