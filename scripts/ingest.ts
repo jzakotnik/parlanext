@@ -20,7 +20,9 @@ const limit = Number(process.argv[process.argv.indexOf("--limit") + 1]) || Infin
 const DIM = env.dimensions;
 const MAX_TOKENS = Number(process.env.EMBED_MAX_TOKENS) || 100000; // je Anfrage (Azure-Limit: 300.000)
 const BATCH = Number(process.env.EMBED_BATCH) || 32; // kleiner = weniger Token pro Anfrage (bei knapper Quota verringern)
-const ai = new OpenAI({ baseURL: env.endpoint, apiKey: env.apiKey, maxRetries: 0 });
+// Einzelner Aufruf: nach TIMEOUT_MS abbrechen (Node würde sonst nach 5 min mit einem Header-Timeout aufgeben) und selbst wiederholen
+const TIMEOUT_MS = Number(process.env.EMBED_TIMEOUT_MS) || 120000;
+const ai = new OpenAI({ baseURL: env.endpoint, apiKey: env.apiKey, maxRetries: 0, timeout: TIMEOUT_MS });
 
 const idx = indexDir();
 fs.mkdirSync(path.join(idx, "texts"), { recursive: true });
@@ -60,6 +62,10 @@ const isReferenceOnly = (t: string) => t.length < 600 && /siehe (die )?antwort|v
 let delay = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Das SDK setzt name="Error", nur die Klasse heißt APIConnectionTimeoutError: daher instanceof
+const istZeitueberschreitung = (e: any) =>
+  e instanceof OpenAI.APIConnectionError || e?.cause?.code === "UND_ERR_HEADERS_TIMEOUT" || (typeof e?.status === "number" && e.status >= 500);
+
 async function embedBatch(inputs: string[], attempt = 0): Promise<number[][]> {
   if (delay) await sleep(delay);
   try {
@@ -72,6 +78,21 @@ async function embedBatch(inputs: string[], attempt = 0): Promise<number[][]> {
       const wait = Math.min(60000, Math.max(retryAfter, 2 ** attempt * 1500));
       delay = Math.min(10000, Math.max(delay, 1000) * 1.5);
       console.warn(`429 (Rate-Limit) – warte ${Math.round(wait / 1000)} s; Pause zwischen Batches jetzt ${Math.round(delay / 1000)} s`);
+      await sleep(wait);
+      return embedBatch(inputs, attempt + 1);
+    }
+    // Hänger, Verbindungsabbruch oder Serverfehler: große Batches halbieren (häufigste Abhilfe), kleine nach Pause wiederholen
+    if (istZeitueberschreitung(e) && attempt < 8) {
+      const grund = e instanceof OpenAI.APIConnectionTimeoutError || e?.cause?.code === "UND_ERR_HEADERS_TIMEOUT" ? "Zeitüberschreitung" : `Fehler ${e?.status ?? "Verbindung"}`;
+      if (inputs.length > 8) {
+        console.warn(`${grund} bei ${inputs.length} Texten – teile den Batch und versuche es erneut`);
+        const mid = Math.ceil(inputs.length / 2);
+        const first = await embedBatch(inputs.slice(0, mid), attempt + 1);
+        const second = await embedBatch(inputs.slice(mid), attempt + 1);
+        return [...first, ...second];
+      }
+      const wait = Math.min(60000, 2 ** attempt * 2000);
+      console.warn(`${grund} – neuer Versuch in ${Math.round(wait / 1000)} s (Versuch ${attempt + 1}/8)`);
       await sleep(wait);
       return embedBatch(inputs, attempt + 1);
     }

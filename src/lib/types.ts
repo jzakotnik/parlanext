@@ -30,6 +30,7 @@ export type CheckResponse = {
   fragen: FrageResult[];
   modus: { ki: boolean; datenbank: boolean };
   schwelle: number;
+  limits: { anzeige: number; max: number };
 };
 
 export type Filter = { tags?: string[]; von?: string; bis?: string; typ?: string };
