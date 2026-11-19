@@ -87,6 +87,7 @@ Optionale Einstellungen:
 | `CHECK_ANZEIGE` | Zuerst angezeigte Fundstellen und Schrittweite von „Weitere anzeigen“, Standard `20` |
 | `CHECK_BEWERTET` | So viele Treffer bewertet GPT (mehr = mehr Token), Standard `6` |
 | `SUCHE_MAX` | Maximum auf „Antworten durchsuchen“ (Schaltfläche „Mehr laden“ in 20er-Schritten), Standard `100` |
+| `EMBED_TIMEOUT_MS` | Zeitlimit je Embedding-Aufruf, Standard `120000` (2 min); bei Überschreitung wird der Batch geteilt und wiederholt |
 | `EMBED_MAX_TOKENS` | Geschätzte Obergrenze je Anfrage, Standard `100000` (Azure-Limit: 300.000) |
 
 **Verbindung prüfen** (sollte JSON mit einem `embedding`-Array zurückgeben):
@@ -354,6 +355,7 @@ Richtwerte, keine Zusagen. Preise und Quoten hängen von Ihrer Azure-Resource ab
 | `404` bei der Embedding-Abfrage | Der Endpunkt braucht `/openai/v1` am Ende, oder der Deployment-Name stimmt nicht |
 | `401` | API-Key falsch |
 | **429** beim Ingest | Rate-Limit des Deployments. Das Tool wartet selbst. Bei Dauerproblemen `EMBED_BATCH` verringern oder die Quota (Tokens pro Minute) im Foundry-Portal erhöhen. Der Lauf ist wiederholbar |
+| `APIConnectionTimeoutError` / `Headers Timeout` beim Ingest | Azure hat einen Embedding-Aufruf nicht rechtzeitig beantwortet. Das Skript bricht ihn nach `EMBED_TIMEOUT_MS` ab, halbiert den Batch und wiederholt bis zu 8-mal. Hilft das nicht, `EMBED_BATCH=16` und ggf. höheres `EMBED_TIMEOUT_MS` setzen und die Quota/Auslastung des Deployments im Foundry-Portal prüfen. Der Lauf ist wiederholbar |
 | `maximum request size is 300000 tokens per request` | Veralteter Stand. `git pull` und neu starten. Aktuell wird in Scheiben unter `EMBED_MAX_TOKENS` gesendet |
 | `Warning: TT: undefined function` | Harmlose Meldung der PDF-Bibliothek zu bestimmten Schriften. Der Text wird trotzdem gelesen |
 | „Bot-Schutz des Servers aktiv“ beim Download | Der Bundestag-Server verlangt eine Browser-Prüfung. Warten Sie (z. B. 30–60 Minuten), erhöhen Sie `--pause`, und starten Sie neu. Das Tool setzt dort fort |
