@@ -4,6 +4,7 @@ import { hasIndex } from "./env";
 import { DEMO_DOCS } from "./demo-data";
 import { loadStore, textPath } from "./store";
 import { tagRefs } from "./tags";
+import { dlog } from "./debug";
 import { tokens } from "./tokens";
 import type { Filter, Hit } from "./types";
 
@@ -74,7 +75,11 @@ export async function searchAntworten(query: string, f: Filter = {}, limit = 10)
   const ok = chunks.map((c) => docs.has(c.doc) && passes(docs.get(c.doc)!, f));
 
   // 1) Vektor: Kosinus (text-embedding-3 liefert normierte Vektoren)
-  const qv = (await embed([query]))?.[0];
+  const tStart = Date.now();
+  let qv: number[] | undefined;
+  try { qv = (await embed([query]))?.[0]; }
+  catch (e) { dlog(`Suche „${query.slice(0, 50)}“: Embedding fehlgeschlagen – nur Stichwortsuche (${String((e as Error)?.message ?? e).slice(0, 120)})`, "warn"); }
+  const tEmbed = Date.now() - tStart;
   const sim = new Float32Array(chunks.length).fill(-1);
   if (qv) {
     for (let i = 0; i < chunks.length; i++) {
@@ -118,6 +123,7 @@ export async function searchAntworten(query: string, f: Filter = {}, limit = 10)
     hits.push(toHit(c.doc, c.content, relevanz));
     if (hits.length >= limit) break;
   }
+  dlog(`Suche „${query.slice(0, 50)}“: Embedding ${tEmbed} ms, Ranking ${Date.now() - tStart - tEmbed} ms, ${hits.length} Dokumente${qv ? "" : " (ohne Vektoren)"}`);
   return hits;
 }
 

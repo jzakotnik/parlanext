@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 import { searchAntworten } from "@/lib/search";
 import { hasIndex, limits } from "@/lib/env";
 import { kurz, logUsage } from "@/lib/usage";
+import { withRequest } from "@/lib/debug";
 
 export async function POST(req: Request) {
+  return withRequest("suche", () => handle(req));
+}
+
+async function handle(req: Request) {
   try {
     const { query = "", filter = {}, limit = 12 } = await req.json();
     const hits = await searchAntworten(String(query).slice(0, 500), filter, Math.min(Number(limit) || 12, limits.sucheMax));
