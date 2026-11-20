@@ -58,7 +58,7 @@ export function rasteEin(quote: string, passage: string): string | null {
   const probe = [lq, lq.replace(/[.!?…\s]+$/, "")].find((p) => p.length >= 8 && ls.includes(p));
   if (!probe) return fallback;
   const [s, e] = bounds(src, ls.indexOf(probe), probe.length);
-  const satz = src.slice(s, e).replace(/^Antwort:\s*/, "").trim(); // Label aus dem Chunk gehört nicht zum Zitat
+  const satz = src.slice(s, e).trim().replace(/^Antwort:\s*/, ""); // Label aus dem Chunk gehört nicht zum Zitat
   if (satz.length >= MIN && satz.length <= MAX && /^[A-ZÄÖÜ0-9„"(]/.test(satz) && /[.!?]$/.test(satz) && wortzeichen(satz) >= 25) return satz;
   return fallback;
 }
