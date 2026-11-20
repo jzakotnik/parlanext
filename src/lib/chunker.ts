@@ -16,7 +16,8 @@ export type TextChunk = {
   nr: string;
 };
 
-const MAX_CHARS = Number(process.env.CHUNK_MAX_CHARS) || 8000;
+// Zahlenlastige Tabellen brauchen fast ein Token je Zeichen; das Embedding-Modell erlaubt 8192 Token je Text.
+const MAX_CHARS = Number(process.env.CHUNK_MAX_CHARS) || 4000;
 const OVERLAP = 400;
 /** Fallback für Texte ohne erkennbare Frage-Struktur. */
 const FALLBACK_SIZE = 2000;

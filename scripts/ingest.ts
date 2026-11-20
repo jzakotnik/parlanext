@@ -71,6 +71,17 @@ async function embedBatch(inputs: string[], attempt = 0): Promise<number[][]> {
       await sleep(wait);
       return embedBatch(inputs, attempt + 1);
     }
+    // Ein einzelner Text über dem Token-Limit des Modells (z. B. dichte Zahlentabellen): nur diesen Text kürzen und wiederholen,
+    // statt den ganzen Lauf abzubrechen. Das Embedding steht dann für den Anfang des Chunks; der volle Text bleibt gespeichert.
+    const m = e?.status === 400 ? /input\[(\d+)\].*maximum input length/i.exec(String(e?.message ?? "")) : null;
+    if (m && attempt < 8) {
+      const k = Number(m[1]);
+      if (inputs[k] && inputs[k].length > 500) {
+        const kuerzer = inputs[k].slice(0, Math.floor(inputs[k].length * 0.6));
+        console.warn(`Text zu lang für das Modell (${inputs[k].length} Zeichen) – Embedding nur für die ersten ${kuerzer.length} Zeichen`);
+        return embedBatch(inputs.map((t, i) => (i === k ? kuerzer : t)), attempt + 1);
+      }
+    }
     // Hänger, Verbindungsabbruch oder Serverfehler: große Batches halbieren (häufigste Abhilfe), kleine nach Pause wiederholen
     if (istZeitueberschreitung(e) && attempt < 8) {
       const grund = e instanceof OpenAI.APIConnectionTimeoutError || e?.cause?.code === "UND_ERR_HEADERS_TIMEOUT" ? "Zeitüberschreitung" : `Fehler ${e?.status ?? "Verbindung"}`;
