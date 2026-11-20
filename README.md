@@ -163,7 +163,7 @@ npm run ingest -- --limit 50   # erst klein testen
 npm run ingest                 # dann alles
 ```
 
-- **Chunking** (`src/lib/chunker.ts`): je Einzelfrage mit Antwort ein Abschnitt. Gemeinsam beantwortete Fragen („Die Fragen 1 und 2 werden gemeinsam beantwortet“) und Unterfragen a), b) bleiben zusammen, Vorbemerkungen sind eigene Abschnitte, Seitenköpfe und Druckvermerk entfallen. Lange Antworten werden mit Überlappung geteilt (`CHUNK_MAX_CHARS`, Standard 8000), die Frage steht in jedem Teil. Nach dieser Änderung `data/index` löschen und neu indexieren.
+- **Chunking** (`src/lib/chunker.ts`): je Einzelfrage mit Antwort ein Abschnitt. Gemeinsam beantwortete Fragen („Die Fragen 1 und 2 werden gemeinsam beantwortet“) und Unterfragen a), b) bleiben zusammen, Vorbemerkungen sind eigene Abschnitte, Seitenköpfe und Druckvermerk entfallen. Lange Antworten werden mit Überlappung geteilt (`CHUNK_MAX_CHARS`, Standard 4000: zahlenlastige Tabellen brauchen fast ein Token je Zeichen, das Modell erlaubt 8192 Token je Text; ein einzelner zu langer Text wird beim Embedding gekürzt statt den Lauf abzubrechen), die Frage steht in jedem Teil. Nach dieser Änderung `data/index` löschen und neu indexieren.
 - Es werden **nur Drucksachen vom Typ „Antwort“** indexiert (`INDEX_TYPEN` ändert das). Die Anfragen selbst bleiben unindexiert.
 - **Wiederholbar:** Bereits indexierte Dokumente werden übersprungen. Nach einem Abbruch macht der Lauf dort weiter.
 - **Rate-Limits:** Bei HTTP 429 wartet das Tool selbst (Retry-After, adaptive Drosselung).
