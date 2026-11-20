@@ -261,6 +261,7 @@ npm run build && npm start   # Produktionsbetrieb
 2. **Suchen:** Jede Variante läuft als **Hybridsuche**: Vektorähnlichkeit (Azure-Embeddings) plus Stichwortsuche, zusammengeführt per Reciprocal Rank Fusion, mit den Filtern (KfW, BMZ, Datum, Vorgangstyp). Der Index liegt im Speicher, die Suche braucht keine Datenbank.
 3. **Bewerten:** GPT bewertet die besten Treffer pro Einzelfrage.
 4. **Belegen:** Ein Urteil gilt nur, wenn das genannte **Zitat wörtlich im Dokument steht**. Lässt es sich nicht verifizieren, wird kein Urteil ausgegeben.
+5. **Nachsuche:** Ist die Frage nur „teilweise“ oder „nichts“ beantwortet, nennt GPT die **offenen Aspekte** (z. B. Zeitraum, Land) und bis zu zwei passende Suchanfragen. Die App sucht damit einmal nach, bewertet mit allen Treffern neu und übernimmt das neue Urteil nur, wenn es nicht schlechter ist. Die Nachsuchen stehen im Rechercheprotokoll mit der Markierung „Nachsuche“, die offenen Aspekte unter dem Urteil. Kosten: ein weiterer GPT-Aufruf und bis zu zwei Embeddings, nur bei nicht vollständig beantworteten Fragen.
 
 **Vertrauensregeln**
 
