@@ -226,13 +226,28 @@ async function phaseAntwortenRessort() {
   }
 }
 
-/** Volltext für bereits vorhandene Antworten nachladen. */
+/** Volltext für bereits vorhandene Antworten nachladen (mit Fortschrittsanzeige). */
 async function phaseVolltext() {
-  for (const f of folders) {
-    for (const r of readRows(f.meta)) {
-      if (stats.volltextNeu >= limit) return;
-      if (r.drucksachetyp !== "Antwort") continue;
-      try { await ladeVolltext(String(r.id), f.path); } catch (e) { stats.fehler++; console.warn((e as Error).message); }
+  const todo: { id: string; path: string }[] = [];
+  let vorhanden = 0;
+  for (const f of folders) for (const r of readRows(f.meta)) {
+    if (r.drucksachetyp !== "Antwort") continue;
+    if (fs.existsSync(path.join(f.path, `${r.id}.txt`))) vorhanden++;
+    else todo.push({ id: String(r.id), path: f.path });
+  }
+  const ziel = Math.min(todo.length, limit);
+  console.log(`${vorhanden + todo.length} Antworten in den Metadaten, ${vorhanden} haben schon einen Volltext, ${todo.length} fehlen${ziel < todo.length ? ` (geladen werden ${ziel}, --limit)` : ""}.`);
+  if (!ziel) return;
+  const t0 = Date.now();
+  let i = 0;
+  for (const t of todo) {
+    if (stats.volltextNeu >= limit) break;
+    try { await ladeVolltext(t.id, t.path); } catch (e) { stats.fehler++; console.warn((e as Error).message); }
+    i++;
+    if (i % 10 === 0 || i === ziel) {
+      const min = (Date.now() - t0) / 60000;
+      const rest = i < ziel ? ` · noch ca. ${Math.max(1, Math.round((min / i) * (ziel - i)))} min` : "";
+      console.log(`  ${i}/${ziel} bearbeitet · ${stats.volltextNeu} geladen, ${stats.volltext404} ohne Volltext${rest}`);
     }
   }
 }
