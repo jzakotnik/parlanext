@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { chatJSON } from "./azure";
 import { hasChat, hasIndex, limits } from "./env";
+import { bestSatz, rasteEin, stripPrefix } from "./quote";
 import { searchAntworten, tokens } from "./search";
 import { SCHWELLE, type CheckResponse, type Emit, type Filter, type FrageResult, type Hit, type Status } from "./types";
 
@@ -116,16 +117,23 @@ async function urteile(frage: string, treffer: Hit[], emit: Emit, n: number): Pr
     const h = ki.treffer != null ? treffer[ki.treffer] : undefined;
     const zitat = ki.zitat?.trim();
     const verifiziert = h && zitat && norm(h.passage).includes(norm(zitat));
-    if (ki.status !== "nichts") emit(verifiziert ? `Frage ${n}: Zitat aus ${h!.dokumentnummer} wörtlich im Dokument verifiziert ✓` : `Frage ${n}: Zitat ließ sich nicht wörtlich verifizieren – wird verworfen`, verifiziert ? "ok" : "warn");
+    // Verifiziertes Zitat auf ganze Sätze erweitern; reine URL-/Fragment-Zitate verwerfen
+    const satz = verifiziert ? rasteEin(zitat!, h!.passage) : null;
+    if (ki.status !== "nichts") {
+      if (satz) emit(`Frage ${n}: Zitat aus ${h!.dokumentnummer} wörtlich im Dokument verifiziert ✓`, "ok");
+      else emit(verifiziert ? `Frage ${n}: Zitat ist nur ein Fragment bzw. eine URL – wird verworfen` : `Frage ${n}: Zitat ließ sich nicht wörtlich verifizieren – wird verworfen`, "warn");
+    }
     const base = { bewertung: "ki" as const, offen: ki.offen, folgesuchen: ki.folgesuchen };
-    if (ki.status !== "nichts" && verifiziert) return { ...base, status: ki.status, beleg: { hitId: h!.id, zitat: zitat! }, begruendung: ki.begruendung };
-    if (ki.status !== "nichts") return { ...base, status: "nichts", beleg: null, begruendung: "Die KI sah einen Treffer, das Zitat ließ sich jedoch nicht wörtlich im Dokument verifizieren – daher keine Aussage." };
+    if (ki.status !== "nichts" && satz) return { ...base, status: ki.status, beleg: { hitId: h!.id, zitat: satz }, begruendung: ki.begruendung };
+    if (ki.status !== "nichts") return { ...base, status: "nichts", beleg: null, begruendung: verifiziert
+      ? "Die KI nannte ein Zitat, das als Beleg nicht taugt (nur Fragment oder Link) – daher keine Aussage."
+      : "Die KI sah einen Treffer, das Zitat ließ sich jedoch nicht wörtlich im Dokument verifizieren – daher keine Aussage." };
     return { ...base, status: "nichts", beleg: null, begruendung: ki.begruendung };
   }
   if (top.length) {
     // Heuristik ohne KI: nur Hinweis, nie "beantwortet"
     const h = top[0];
-    return { status: "teilweise", beleg: { hitId: h.id, zitat: h.passage.slice(0, 300) }, bewertung: "heuristik", offen: [], folgesuchen: [],
+    return { status: "teilweise", beleg: { hitId: h.id, zitat: bestSatz(h.passage, frage) || stripPrefix(h.passage).slice(0, 300) }, bewertung: "heuristik", offen: [], folgesuchen: [],
       begruendung: "Heuristische Einschätzung (ohne KI-Bewertung): ähnlicher Treffer über der Schwelle – bitte Antwort prüfen." };
   }
   return { status: "nichts", beleg: null, bewertung: "heuristik", offen: [], folgesuchen: [],

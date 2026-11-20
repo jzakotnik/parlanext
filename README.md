@@ -265,7 +265,7 @@ npm run build && npm start   # Produktionsbetrieb
 
 **Vertrauensregeln**
 
-- Urteil nur mit wörtlichem Zitat, Datum und PDF-Link.
+- Urteil nur mit wörtlichem Zitat, Datum und PDF-Link. Das Zitat wird auf den **ganzen Satz** erweitert (Abkürzungen wie „z. B.“, „Mio.“, Dezimalpunkte und Daten wie „1. Januar“ zählen nicht als Satzende); zitiert die KI nur einen Link oder ein Satzfragment unter 40 Zeichen, wird es verworfen. Ohne KI zeigt die Heuristik den passendsten Satz statt eines abgeschnittenen Textanfangs.
 - Bei „nichts gefunden“ zeigt die App die verwendeten Suchanfragen und Filter und den nächsten Treffer unter der Relevanzschwelle (0,55).
 - Antworten, die älter als 12 Monate sind, werden markiert.
 - Ohne Chat-Modell gibt es nur eine Hinweis-Einstufung („teilweise“) und nie „beantwortet“.
