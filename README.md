@@ -130,6 +130,7 @@ Lädt Kleine und Große Anfragen einer Wahlperiode **und** die zugehörigen Antw
 npm run fetch -- --monate 12        # letzte 12 Monate
 npm run fetch -- --von 2025-03-25   # ab einem Datum
 npm run fetch                       # komplette Wahlperiode 21
+npm run fetch -- --monate 12 --ressort   # nur Antworten mit federführendem BMZ
 ```
 
 | Option | Bedeutung |
@@ -141,10 +142,14 @@ npm run fetch                       # komplette Wahlperiode 21
 | `--nur anfragen` / `--nur antworten` | Nur eine der beiden Phasen ausführen |
 | `--pause MS` | Mittlere Pause zwischen Abrufen, Standard `400` (zufällig 0,5×–1,5×) |
 | `--antwort-typ NAME` | Falls DIP den Typ „Antwort“ anders benennt |
+| `--ressort ["Name"]` | Nur Antworten auf Anfragen, bei denen das Ressort in DIP als **federführend** steht (ohne Namen: BMZ). Lädt nur Antworten; verlässlicher als die Tags „BMZ-Bezug“ |
+| `--ohne-volltext` | Nur PDFs laden, keinen DIP-Volltext |
+| `--nur volltext` | Volltext für schon geladene Antworten nachholen |
 
 Eigenschaften:
 
 - **Sequentiell und höflich:** keine parallelen Abrufe, zufällige Pausen, ehrlicher User-Agent. Bei der Browser-Prüfung des Servers („Bot-Schutz“) wartet das Tool und bricht nach vier Versuchen ab. Die Prüfung wird nicht umgangen.
+- **Volltext aus DIP:** Zu jeder Antwort wird zusätzlich der Volltext (`/drucksache-text`) als `<id>.txt` neben die PDF gelegt. Der Ingest bevorzugt ihn vor der PDF-Extraktion (sauberer, keine Probleme mit Seitenköpfen oder Silbentrennung). Fehlt er (ganz neue Drucksachen), liest der Ingest die PDF. Für Altbestände: `npm run fetch -- --nur volltext`, dann `data/index` löschen und neu indexieren.
 - **Wiederholbar:** Vorhandenes wird übersprungen, ein Abbruch kostet nichts. Erst `--monate 1`, später `--monate 12` ist problemlos möglich.
 - **404 bei PDFs:** Ganz neue Drucksachen sind beim Bundestag oft noch nicht abrufbar. Sie werden übersprungen und beim nächsten Lauf erneut versucht.
 - **Dauer:** rund 4.000 PDFs für 12 Monate brauchen gut eine Stunde.

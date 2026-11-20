@@ -147,10 +147,15 @@ async function main() {
   for (const d of docs) {
     if (n >= limit) break;
     if (done.has(d.id)) { skipped++; continue; }
+    // Bevorzugt der DIP-Volltext (<id>.txt, von npm run fetch), sonst PDF-Extraktion
+    const txtFile = path.join(env.dataDir, d.folder, `${d.id}.txt`);
     const file = pdfPath(d);
-    if (!fs.existsSync(file)) { console.warn(`PDF fehlt: ${file}`); skipped++; continue; }
     let text: string;
-    try { text = await pdfText(file); } catch (e) { console.warn(`Lesefehler ${d.datei}: ${(e as Error).message}`); skipped++; continue; }
+    if (fs.existsSync(txtFile)) text = fs.readFileSync(txtFile, "utf8");
+    else {
+      if (!fs.existsSync(file)) { console.warn(`PDF fehlt: ${file}`); skipped++; continue; }
+      try { text = await pdfText(file); } catch (e) { console.warn(`Lesefehler ${d.datei}: ${(e as Error).message}`); skipped++; continue; }
+    }
     if (text.trim().length < 80 || isReferenceOnly(text)) { console.warn(`übersprungen (leer/Verweis): ${d.datei}`); pendingDocs.push(d.id); skipped++; continue; }
 
     fs.writeFileSync(textPath(d.id), text);
