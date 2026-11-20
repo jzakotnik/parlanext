@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
 import { extractText, getDocumentProxy } from "unpdf";
+import { chunkAntwort } from "../src/lib/chunker";
 import { tagsFor } from "../src/lib/tags";
 import { FOLDERS, INDEX_TYPEN, indexDir, pdfPath, readMetadata, safeId, textPath } from "../src/lib/store";
 import { env } from "../src/lib/env";
@@ -43,17 +44,6 @@ if (fs.existsSync(vecFile)) fs.truncateSync(vecFile, manifest.chunks * DIM * 4);
 if (fs.existsSync(chunksFile)) {
   const keep = fs.readFileSync(chunksFile, "utf8").split("\n").filter(Boolean).slice(0, manifest.chunks);
   fs.writeFileSync(chunksFile, keep.length ? keep.join("\n") + "\n" : "");
-}
-
-/** Pro Frage/Antwort-Paar ("1. …") chunken, Fallback ~2000 Zeichen mit Überlappung. */
-function chunk(text: string): string[] {
-  const pairs = text.split(/\n(?=\s*\d+\.\s)/).map((s) => s.trim()).filter((s) => s.length > 40);
-  const out: string[] = [];
-  for (const p of pairs.length > 1 ? pairs : [text.trim()]) {
-    if (p.length <= 2400) out.push(p);
-    else for (let i = 0; i < p.length; i += 1800) out.push(p.slice(i, i + 2000));
-  }
-  return out;
 }
 
 const isReferenceOnly = (t: string) => t.length < 600 && /siehe (die )?antwort|verweis/i.test(t);
@@ -110,7 +100,7 @@ async function pdfText(file: string): Promise<string> {
 const tagsFile = path.join(idx, "tags.json");
 const tagMap: Record<string, string[]> = fs.existsSync(tagsFile) ? JSON.parse(fs.readFileSync(tagsFile, "utf8")) : {};
 
-let queue: { doc: string; ord: number; content: string }[] = [];
+let queue: { doc: string; ord: number; content: string; typ: string; nr: string }[] = [];
 let pendingDocs: string[] = [];
 
 async function flush() {
@@ -157,17 +147,22 @@ async function main() {
   for (const d of docs) {
     if (n >= limit) break;
     if (done.has(d.id)) { skipped++; continue; }
+    // Bevorzugt der DIP-Volltext (<id>.txt, von npm run fetch), sonst PDF-Extraktion
+    const txtFile = path.join(env.dataDir, d.folder, `${d.id}.txt`);
     const file = pdfPath(d);
-    if (!fs.existsSync(file)) { console.warn(`PDF fehlt: ${file}`); skipped++; continue; }
     let text: string;
-    try { text = await pdfText(file); } catch (e) { console.warn(`Lesefehler ${d.datei}: ${(e as Error).message}`); skipped++; continue; }
+    if (fs.existsSync(txtFile)) text = fs.readFileSync(txtFile, "utf8");
+    else {
+      if (!fs.existsSync(file)) { console.warn(`PDF fehlt: ${file}`); skipped++; continue; }
+      try { text = await pdfText(file); } catch (e) { console.warn(`Lesefehler ${d.datei}: ${(e as Error).message}`); skipped++; continue; }
+    }
     if (text.trim().length < 80 || isReferenceOnly(text)) { console.warn(`übersprungen (leer/Verweis): ${d.datei}`); pendingDocs.push(d.id); skipped++; continue; }
 
     fs.writeFileSync(textPath(d.id), text);
     tagMap[d.id] = tagsFor(text);
     // Kontext-Präfix je Chunk verbessert das Retrieval
     const prefix = `${d.dokumentnummer} | ${d.datum ?? ""} | ${d.titel} | ${d.deskriptoren.join(", ")}\n`;
-    chunk(text).forEach((c, ord) => queue.push({ doc: d.id, ord, content: prefix + c }));
+    chunkAntwort(text).forEach((c, ord) => queue.push({ doc: d.id, ord, content: prefix + c.content, typ: c.typ, nr: c.nr }));
     pendingDocs.push(d.id);
     n++;
     if (queue.length >= BATCH) await flush();

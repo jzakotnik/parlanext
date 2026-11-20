@@ -110,7 +110,7 @@ export default function CheckWorkspace() {
         lines.push(`- Fundstelle: ${h.dokumentnummer} vom ${fmtDate(h.datum)} – ${h.titel}${h.pdf_url ? ` (${h.pdf_url})` : ""}`);
         if (q.beleg?.hitId === h.id) lines.push(`  > „${q.beleg.zitat}“`);
       });
-      lines.push(`Suchanfragen: ${q.protokoll.map((p) => `„${p.query}“ (${p.treffer})`).join("; ")}`, "");
+      lines.push(`Suchanfragen: ${q.protokoll.map((p) => `„${p.query}“ (${p.treffer}${p.folgesuche ? ", Nachsuche" : ""})`).join("; ")}`, "");
     });
     const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
     const a = document.createElement("a");
@@ -195,6 +195,7 @@ export default function CheckWorkspace() {
                 {f.beleg ? (
                   <>
                     <b>{f.status === "beantwortet" ? "Beantwortet – Beleg:" : "Teilweise beantwortet – Beleg:"}</b> {f.begruendung}
+                    {f.offen?.length ? <p style={{ margin: "6px 0 0", color: "var(--ink-2)", fontSize: 14 }}>Nicht abgedeckt: {f.offen.join("; ")}</p> : null}
                     {(() => { const h = f.treffer.find((t) => t.id === f.beleg!.hitId); return (
                       <blockquote className="quote">„{f.beleg!.zitat}“
                         {h && <cite>{h.dokumentnummer} · {fmtDate(h.datum)} · <a href={`/antwort/${encodeURIComponent(h.id)}`}>Volltext</a>{h.pdf_url && <> · <a href={h.pdf_url} target="_blank" rel="noreferrer">PDF ↗</a></>}</cite>}
@@ -203,6 +204,7 @@ export default function CheckWorkspace() {
                 ) : (
                   <>
                     <b>Kein belegbares Ergebnis.</b> {f.begruendung}
+                    {f.offen?.length ? <p style={{ margin: "8px 0 0", color: "var(--ink-2)", fontSize: 14 }}>Offen: {f.offen.join("; ")}</p> : null}
                     {nearest && <p style={{ margin: "8px 0 0", color: "var(--ink-2)", fontSize: 14 }}>Nächster Treffer: {nearest.dokumentnummer} ({pct(nearest.relevanz)}, unter der Schwelle von {pct(data.schwelle)}).</p>}
                   </>
                 )}
@@ -232,7 +234,7 @@ export default function CheckWorkspace() {
           <aside className="stack sticky" aria-label="Rechercheprotokoll">
             <div className="card log">
               <h2 className="col-title" style={{ margin: 0 }}>Rechercheprotokoll</h2>
-              <ol>{f.protokoll.map((p) => <li key={p.query}>„{p.query}“ <span className="tag">{p.treffer} Treffer</span></li>)}</ol>
+              <ol>{f.protokoll.map((p) => <li key={p.query}>„{p.query}“ <span className="tag">{p.treffer} Treffer</span>{p.folgesuche && <> <span className="tag">Nachsuche</span></>}</li>)}</ol>
               <p style={{ color: "var(--ink-3)", margin: "10px 0 0" }}>
                 Filter: {[filter.von && `ab ${fmtDate(filter.von)}`].filter(Boolean).join(", ") || "keine"} · Schwelle {pct(data.schwelle)}
                 <br />Modus: {data.modus.ki ? "KI-Bewertung" : "ohne KI"} · {data.modus.datenbank ? "Suchindex" : "Demo-Daten"}

@@ -22,8 +22,10 @@ export type FrageResult = {
   begruendung: string;
   beleg: { hitId: string; zitat: string } | null;
   treffer: Hit[];
-  protokoll: { query: string; treffer: number }[];
+  protokoll: { query: string; treffer: number; folgesuche?: boolean }[];
   bewertung: "ki" | "heuristik";
+  /** Aspekte der Frage, die die gefundenen Antworten nicht abdecken (nur bei teilweise/nichts, nur mit KI). */
+  offen?: string[];
 };
 
 export type CheckResponse = {

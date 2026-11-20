@@ -1,11 +1,17 @@
 /**
  * Daten-Download aus der DIP-API des Bundestags – Anfragen UND Antworten, direkt in den data-Ordner.
  *
- *   npm run fetch -- [--monate 12 | --von 2025-03-25]  [--wahlperiode 21] [--bis 2026-12-31] [--limit 20] [--pause 400] [--nur anfragen|antworten]
+ *   npm run fetch -- [--monate 12 | --von 2025-03-25]  [--wahlperiode 21] [--bis 2026-12-31] [--limit 20] [--pause 400] [--nur anfragen|antworten|volltext]
+ *                    [--ressort ["Name"]] [--ohne-volltext]
  *
  * Phase 1 (anfragen):  alle Kleinen/Großen Anfragen der Wahlperiode -> data/{kleine,grosse}_anfragen
  * Phase 2 (antworten): alle Antwort-Drucksachen im Zeitraum, über den Vorgang der passenden Anfrage zugeordnet -> selber Ordner
- * Je Drucksache: <id>.pdf + eine Zeile in metadaten.jsonl (DIP-JSON, ergänzt um anfrage_id/anfrage_dokumentnummer).
+ * Je Drucksache: <id>.pdf + <id>.txt (Volltext aus DIP /drucksache-text, sauberer als PDF-Extraktion) + eine Zeile in metadaten.jsonl (DIP-JSON, ergänzt um anfrage_id/anfrage_dokumentnummer).
+ *
+ * --ressort: nur Antworten auf Kleine/Große Anfragen, bei denen das Ressort (Standard: BMZ) in DIP als federführend steht.
+ *   Nutzt /vorgangsposition (dort stehen die Ressorts) statt /drucksache; lädt nur die Antworten (Anfragen werden nicht indexiert).
+ * --nur volltext: lädt fehlende <id>.txt für bereits vorhandene Antworten nach (ohne neue Drucksachen).
+ * --ohne-volltext: nur PDFs laden (altes Verhalten).
  * Wiederholbar: vorhandene Einträge/PDFs werden übersprungen. Braucht DIP_API_KEY in .env.local.
  *
  * ACHTUNG: Filternamen (f.drucksachetyp, f.wahlperiode, f.zuordnung, f.datum.start/end, f.vorgang) und
@@ -28,6 +34,10 @@ const monateZurueck = (n: number) => { const d = new Date(); d.setMonth(d.getMon
 const von = arg("von") ?? (monate ? monateZurueck(monate) : undefined);
 const bis = arg("bis");
 const nur = arg("nur");
+const BMZ = "Bundesministerium für wirtschaftliche Zusammenarbeit und Entwicklung";
+const ressortIdx = process.argv.indexOf("--ressort");
+const ressort = ressortIdx > 0 ? (process.argv[ressortIdx + 1] && !process.argv[ressortIdx + 1].startsWith("--") ? process.argv[ressortIdx + 1] : BMZ) : undefined;
+const volltext = !process.argv.includes("--ohne-volltext");
 const CONC = 1; // bewusst sequentiell: keine parallelen Downloads
 const PAUSE = Number(arg("pause")) || 400; // mittlere Pause zwischen Abrufen in ms (zufällig 0,5x–1,5x)
 
@@ -75,7 +85,7 @@ async function pool<T>(items: T[], fn: (x: T) => Promise<void>) {
   await Promise.all(Array.from({ length: CONC }, async () => { while (i < items.length) await fn(items[i++]); }));
 }
 
-const stats = { anfragenNeu: 0, antwortenNeu: 0, ohneAntwort: 0, fehler: 0, pdf404: 0 };
+const stats = { anfragenNeu: 0, antwortenNeu: 0, ohneAntwort: 0, fehler: 0, pdf404: 0, volltextNeu: 0, volltext404: 0 };
 const folders = FOLDERS.map((f) => ({ ...f, path: path.join(env.dataDir, f.dir), meta: path.join(env.dataDir, f.dir, "metadaten.jsonl") }));
 for (const f of folders) { fs.mkdirSync(f.path, { recursive: true }); if (!fs.existsSync(f.meta)) fs.writeFileSync(f.meta, ""); }
 const readRows = (file: string) => fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
@@ -89,6 +99,20 @@ async function ladePdf(d: any, folder: string): Promise<boolean> {
   const r = await get(url);
   if (!r.ok) { if (r.status === 404) stats.pdf404++; else console.warn(`PDF ${r.status}: ${url}`); return false; }
   fs.writeFileSync(pdfFile, Buffer.from(await r.arrayBuffer()));
+  return true;
+}
+
+/** Volltext aus DIP (/drucksache-text/<id>) als <id>.txt neben der PDF. true = Datei vorhanden. */
+async function ladeVolltext(id: string, folder: string): Promise<boolean> {
+  if (!volltext) return false;
+  const file = path.join(folder, `${id}.txt`);
+  if (fs.existsSync(file)) return true;
+  const r = await dip(`/drucksache-text/${encodeURIComponent(id)}?format=json`);
+  if (!r.ok) { if (r.status === 404) stats.volltext404++; else console.warn(`Volltext ${r.status}: Drucksache ${id}`); return false; }
+  const text = String((await r.json()).text ?? "").trim();
+  if (text.length < 80) { stats.volltext404++; return false; }
+  fs.writeFileSync(file, text);
+  stats.volltextNeu++;
   return true;
 }
 
@@ -148,7 +172,9 @@ async function phaseAntworten() {
         if (!match && !istAnfrage) return; // z. B. Antworten auf andere Vorgangstypen
         const f = match?.f ?? (vbs.some((vb) => /Große/.test(vb.vorgangstyp ?? "")) ? folders[1] : folders[0]);
         if (have.has(String(d.id)) && fs.existsSync(path.join(f.path, `${d.id}.pdf`))) { if (match) zugeordnet.add(String(match.a.id)); return; }
-        if (!(await ladePdf(d, f.path))) return;
+        const pdfOk = await ladePdf(d, f.path);
+        const txtOk = await ladeVolltext(String(d.id), f.path);
+        if (!pdfOk && !txtOk) return;
         if (!have.has(String(d.id))) {
           have.add(String(d.id));
           fs.appendFileSync(f.meta, JSON.stringify({ ...d, ...(match ? { anfrage_id: match.a.id, anfrage_dokumentnummer: match.a.dokumentnummer } : {}), vorgangstyp: f.typ }) + "\n");
@@ -163,13 +189,68 @@ async function phaseAntworten() {
   if (limit === Infinity) stats.ohneAntwort = [...byVorgang.values()].filter((x, i, arr) => arr.findIndex((y) => y.a.id === x.a.id) === i && !zugeordnet.has(String(x.a.id))).length;
 }
 
+/** Antworten, bei denen `ressort` federführend ist (DIP: /vorgangsposition mit ressort[].federfuehrend). */
+async function phaseAntwortenRessort() {
+  const have = new Set<string>();
+  for (const f of folders) for (const r of readRows(f.meta)) have.add(String(r.id));
+  const q = `/vorgangsposition?f.drucksachetyp=Antwort` + (von ? `&f.datum.start=${von}` : "") + (bis ? `&f.datum.end=${bis}` : "");
+  const key = ressort!.toLowerCase();
+  let gesehen = 0;
+  for await (const { docs, numFound } of seiten(q)) {
+    if (gesehen === 0) console.log(`Antwortpositionen laut DIP: ${numFound ?? "?"} – behalte Anfragen mit federführendem Ressort „${ressort}“`);
+    gesehen += docs.length;
+    for (const p of docs) {
+      if (stats.antwortenNeu >= limit) break;
+      const fs_ = p.fundstelle ?? {};
+      const folder = folders.find((f) => f.typ === p.vorgangstyp);
+      const fuehrend = (p.ressort ?? []).some((r: any) => r.federfuehrend === true && String(r.titel ?? "").toLowerCase() === key);
+      if (!folder || !fuehrend || p.zuordnung !== "BT" || !fs_.id || !p.vorgang_id) continue;
+      if (p.wahlperiode && String(p.wahlperiode) !== wp && !von) continue;
+      const id = String(fs_.id);
+      try {
+        const pdfOk = await ladePdf({ id, fundstelle: fs_ }, folder.path);
+        const txtOk = await ladeVolltext(id, folder.path);
+        if (!pdfOk && !txtOk) continue;
+        if (have.has(id)) continue;
+        have.add(id);
+        fs.appendFileSync(folder.meta, JSON.stringify({
+          id, dokumentnummer: fs_.dokumentnummer, datum: fs_.datum ?? p.datum, titel: p.titel, drucksachetyp: "Antwort",
+          fundstelle: fs_, vorgangsbezug: [{ id: p.vorgang_id, vorgangstyp: p.vorgangstyp, titel: p.titel }],
+          vorgangstyp: folder.typ, ressort: p.ressort, federfuehrend: ressort, ...(ressort === BMZ ? { bmz: true } : {}),
+        }) + "\n");
+        stats.antwortenNeu++;
+      } catch (e) { stats.fehler++; console.warn((e as Error).message); }
+    }
+    console.log(`  ${gesehen} Antwortpositionen gesehen, ${stats.antwortenNeu} neu geladen`);
+    if (stats.antwortenNeu >= limit) break;
+  }
+}
+
+/** Volltext für bereits vorhandene Antworten nachladen. */
+async function phaseVolltext() {
+  for (const f of folders) {
+    for (const r of readRows(f.meta)) {
+      if (stats.volltextNeu >= limit) return;
+      if (r.drucksachetyp !== "Antwort") continue;
+      try { await ladeVolltext(String(r.id), f.path); } catch (e) { stats.fehler++; console.warn((e as Error).message); }
+    }
+  }
+}
+
 async function main() {
   console.log(`DIP: ${BASE} (sequentiell, Pause ~${PAUSE} ms)`);
   if (von || bis) console.log(`Zeitraum: ${von ?? "Beginn"} bis ${bis ?? "heute"}`);
-  if (nur !== "antworten") await phaseAnfragen();
-  if (nur !== "anfragen") await phaseAntworten();
+  if (nur === "volltext") await phaseVolltext();
+  else if (ressort) {
+    if (nur === "anfragen") console.warn("--ressort lädt nur Antworten; --nur anfragen macht dann nichts.");
+    else await phaseAntwortenRessort();
+  } else {
+    if (nur !== "antworten") await phaseAnfragen();
+    if (nur !== "anfragen") await phaseAntworten();
+  }
   console.log("Fertig:", stats);
   if (stats.pdf404) console.log(`${stats.pdf404} PDFs sind beim Bundestag (noch) nicht abrufbar (404) – meist ganz neue Drucksachen. Beim nächsten Lauf wird es erneut versucht.`);
+  if (stats.volltext404) console.log(`${stats.volltext404} Drucksachen haben in DIP (noch) keinen Volltext – dafür wird beim Ingest die PDF gelesen.`);
   if (Object.keys(typen).length) console.log('Vorgangstypen der geladenen Antworten:', typen);
   console.log("Nächster Schritt: npm run ingest -- --limit 50");
 }

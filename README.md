@@ -130,6 +130,7 @@ Lädt Kleine und Große Anfragen einer Wahlperiode **und** die zugehörigen Antw
 npm run fetch -- --monate 12        # letzte 12 Monate
 npm run fetch -- --von 2025-03-25   # ab einem Datum
 npm run fetch                       # komplette Wahlperiode 21
+npm run fetch -- --monate 12 --ressort   # nur Antworten mit federführendem BMZ
 ```
 
 | Option | Bedeutung |
@@ -141,10 +142,14 @@ npm run fetch                       # komplette Wahlperiode 21
 | `--nur anfragen` / `--nur antworten` | Nur eine der beiden Phasen ausführen |
 | `--pause MS` | Mittlere Pause zwischen Abrufen, Standard `400` (zufällig 0,5×–1,5×) |
 | `--antwort-typ NAME` | Falls DIP den Typ „Antwort“ anders benennt |
+| `--ressort ["Name"]` | Nur Antworten auf Anfragen, bei denen das Ressort in DIP als **federführend** steht (ohne Namen: BMZ). Lädt nur Antworten; verlässlicher als die Tags „BMZ-Bezug“ |
+| `--ohne-volltext` | Nur PDFs laden, keinen DIP-Volltext |
+| `--nur volltext` | Volltext für schon geladene Antworten nachholen |
 
 Eigenschaften:
 
 - **Sequentiell und höflich:** keine parallelen Abrufe, zufällige Pausen, ehrlicher User-Agent. Bei der Browser-Prüfung des Servers („Bot-Schutz“) wartet das Tool und bricht nach vier Versuchen ab. Die Prüfung wird nicht umgangen.
+- **Volltext aus DIP:** Zu jeder Antwort wird zusätzlich der Volltext (`/drucksache-text`) als `<id>.txt` neben die PDF gelegt. Der Ingest bevorzugt ihn vor der PDF-Extraktion (sauberer, keine Probleme mit Seitenköpfen oder Silbentrennung). Fehlt er (ganz neue Drucksachen), liest der Ingest die PDF. Für Altbestände: `npm run fetch -- --nur volltext`, dann `data/index` löschen und neu indexieren.
 - **Wiederholbar:** Vorhandenes wird übersprungen, ein Abbruch kostet nichts. Erst `--monate 1`, später `--monate 12` ist problemlos möglich.
 - **404 bei PDFs:** Ganz neue Drucksachen sind beim Bundestag oft noch nicht abrufbar. Sie werden übersprungen und beim nächsten Lauf erneut versucht.
 - **Dauer:** rund 4.000 PDFs für 12 Monate brauchen gut eine Stunde.
@@ -158,6 +163,7 @@ npm run ingest -- --limit 50   # erst klein testen
 npm run ingest                 # dann alles
 ```
 
+- **Chunking** (`src/lib/chunker.ts`): je Einzelfrage mit Antwort ein Abschnitt. Gemeinsam beantwortete Fragen („Die Fragen 1 und 2 werden gemeinsam beantwortet“) und Unterfragen a), b) bleiben zusammen, Vorbemerkungen sind eigene Abschnitte, Seitenköpfe und Druckvermerk entfallen. Lange Antworten werden mit Überlappung geteilt (`CHUNK_MAX_CHARS`, Standard 8000), die Frage steht in jedem Teil. Nach dieser Änderung `data/index` löschen und neu indexieren.
 - Es werden **nur Drucksachen vom Typ „Antwort“** indexiert (`INDEX_TYPEN` ändert das). Die Anfragen selbst bleiben unindexiert.
 - **Wiederholbar:** Bereits indexierte Dokumente werden übersprungen. Nach einem Abbruch macht der Lauf dort weiter.
 - **Rate-Limits:** Bei HTTP 429 wartet das Tool selbst (Retry-After, adaptive Drosselung).
@@ -255,10 +261,11 @@ npm run build && npm start   # Produktionsbetrieb
 2. **Suchen:** Jede Variante läuft als **Hybridsuche**: Vektorähnlichkeit (Azure-Embeddings) plus Stichwortsuche, zusammengeführt per Reciprocal Rank Fusion, mit den Filtern (KfW, BMZ, Datum, Vorgangstyp). Der Index liegt im Speicher, die Suche braucht keine Datenbank.
 3. **Bewerten:** GPT bewertet die besten Treffer pro Einzelfrage.
 4. **Belegen:** Ein Urteil gilt nur, wenn das genannte **Zitat wörtlich im Dokument steht**. Lässt es sich nicht verifizieren, wird kein Urteil ausgegeben.
+5. **Nachsuche:** Ist die Frage nur „teilweise“ oder „nichts“ beantwortet, nennt GPT die **offenen Aspekte** (z. B. Zeitraum, Land) und bis zu zwei passende Suchanfragen. Die App sucht damit einmal nach, bewertet mit allen Treffern neu und übernimmt das neue Urteil nur, wenn es nicht schlechter ist. Die Nachsuchen stehen im Rechercheprotokoll mit der Markierung „Nachsuche“, die offenen Aspekte unter dem Urteil. Kosten: ein weiterer GPT-Aufruf und bis zu zwei Embeddings, nur bei nicht vollständig beantworteten Fragen.
 
 **Vertrauensregeln**
 
-- Urteil nur mit wörtlichem Zitat, Datum und PDF-Link.
+- Urteil nur mit wörtlichem Zitat, Datum und PDF-Link. Das Zitat wird auf den **ganzen Satz** erweitert (Abkürzungen wie „z. B.“, „Mio.“, Dezimalpunkte und Daten wie „1. Januar“ zählen nicht als Satzende); zitiert die KI nur einen Link oder ein Satzfragment unter 40 Zeichen, wird es verworfen. Ohne KI zeigt die Heuristik den passendsten Satz statt eines abgeschnittenen Textanfangs.
 - Bei „nichts gefunden“ zeigt die App die verwendeten Suchanfragen und Filter und den nächsten Treffer unter der Relevanzschwelle (0,55).
 - Antworten, die älter als 12 Monate sind, werden markiert.
 - Ohne Chat-Modell gibt es nur eine Hinweis-Einstufung („teilweise“) und nie „beantwortet“.
@@ -381,6 +388,7 @@ src/
 │   └── api/{check,search,pdf}/   Server-Endpunkte (Schlüssel bleiben serverseitig)
 ├── components/                   Oberfläche (Arbeitsbereich, Trefferkarten, Navigation)
 └── lib/
+    ├── chunker.ts                Frage-Antwort-Chunking
     ├── check.ts                  Zerlegen → Suchen → Bewerten → Zitat verifizieren
     ├── search.ts                 Hybridsuche (Vektor + Stichwort, RRF)
     ├── store.ts                  Laden von Metadaten und Index aus data/

@@ -26,7 +26,7 @@ export type Doc = {
   datei: string; // Dateiname der PDF im Ordner
 };
 
-export type Chunk = { doc: string; ord: number; content: string };
+export type Chunk = { doc: string; ord: number; content: string; typ?: string; nr?: string };
 
 type Store = { docs: Map<string, Doc>; chunks: Chunk[]; vectors: Float32Array; dim: number; mtime: number; lows?: string[] };
 const g = globalThis as unknown as { __store?: Store };
