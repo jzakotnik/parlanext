@@ -161,7 +161,9 @@ async function main() {
     fs.writeFileSync(textPath(d.id), text);
     tagMap[d.id] = tagsFor(text);
     // Kontext-Präfix je Chunk verbessert das Retrieval
-    const prefix = `${d.dokumentnummer} | ${d.datum ?? ""} | ${d.titel} | ${d.deskriptoren.join(", ")}\n`;
+    // Einzeilig halten: DIP-Titel enthalten Zeilenumbrüche („… Kleine Anfrage\r\n- Drucksache 21/8830 -\r\n…“)
+    const eine = (t: string) => t.replace(/\s+/g, " ").trim();
+    const prefix = `${d.dokumentnummer} | ${d.datum ?? ""} | ${eine(d.titel)} | ${eine(d.deskriptoren.join(", "))}\n`;
     chunkAntwort(text).forEach((c, ord) => queue.push({ doc: d.id, ord, content: prefix + c.content, typ: c.typ, nr: c.nr }));
     pendingDocs.push(d.id);
     n++;
